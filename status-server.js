@@ -1,7 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const Database = require('better-sqlite3');
 
 const app = express();
 const PORT = 3747;
@@ -13,9 +15,54 @@ app.use(express.json());
 
 const STATUS_FILE = path.join(__dirname, 'status.json');
 const FEED_FILE = path.join(__dirname, 'feed.json');
+const OPENCODE_DB_PATH = path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
 
 const VALID_AGENTS = ['planner', 'coder', 'reviewer', 'refactor'];
 const VALID_STATES = ['idle', 'active', 'attention', 'done', 'error'];
+
+const MODEL_CACHE_TTL = 10_000;
+let modelCache = { data: {}, timestamp: 0 };
+
+let opencodeDb = null;
+try {
+  opencodeDb = new Database(OPENCODE_DB_PATH, { readonly: true, fileMustExist: true });
+} catch (e) {
+  console.warn(`[model-query] Could not open opencode DB at ${OPENCODE_DB_PATH}: ${e.message}`);
+}
+
+function getLatestModels() {
+  const now = Date.now();
+  if (now - modelCache.timestamp < MODEL_CACHE_TTL) {
+    return modelCache.data;
+  }
+
+  if (!opencodeDb) {
+    return modelCache.data;
+  }
+
+  try {
+    const rows = opencodeDb.prepare(`
+      SELECT json_extract(data, '$.agent') as agent,
+             json_extract(data, '$.modelID') as model,
+             json_extract(data, '$.providerID') as provider
+      FROM message
+      WHERE json_extract(data, '$.role') = 'assistant'
+        AND json_extract(data, '$.agent') IN ('planner','reviewer','refactor')
+      GROUP BY json_extract(data, '$.agent')
+      HAVING time_created = MAX(time_created)
+    `).all();
+
+    const result = {};
+    for (const row of rows) {
+      result[row.agent] = { model: row.model, provider: row.provider };
+    }
+    modelCache = { data: result, timestamp: now };
+    return result;
+  } catch (e) {
+    console.warn('[model-query] Failed to read opencode DB:', e.message);
+    return modelCache.data;
+  }
+}
 
 function readJSON(filePath, fallback) {
   try {
@@ -55,7 +102,17 @@ function loadFeed() {
 
 // GET /status — Dashboard polls this every 5s
 app.get('/status', (req, res) => {
-  res.json(loadStatus());
+  const status = loadStatus();
+  const models = getLatestModels();
+
+  for (const [agent, modelInfo] of Object.entries(models)) {
+    if (status.agents[agent]) {
+      status.agents[agent].model = modelInfo.model;
+      status.agents[agent].provider = modelInfo.provider;
+    }
+  }
+
+  res.json(status);
 });
 
 // POST /status — Wrapper scripts call this on agent start/stop

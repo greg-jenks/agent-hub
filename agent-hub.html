@@ -629,7 +629,7 @@
         <div class="agent-role">Architecture &middot; Strategy &middot; Scoping</div>
         <div class="agent-stack">
           <span class="tag">opencode</span>
-          <span class="tag">Claude Opus 4.6</span>
+          <span class="tag" id="model-planner">Claude Opus 4.6</span>
         </div>
         <div class="agent-status-row">
           <div>
@@ -655,7 +655,7 @@
         <div class="agent-role">Changes &middot; Features &middot; Fixes</div>
         <div class="agent-stack">
           <span class="tag">gh copilot</span>
-          <span class="tag">GPT-5.3 Codex</span>
+          <span class="tag" id="model-coder">GPT-5.3 Codex</span>
         </div>
         <div class="agent-status-row">
           <div>
@@ -681,7 +681,7 @@
         <div class="agent-role">Quality &middot; Bugs &middot; Security &middot; Style</div>
         <div class="agent-stack">
           <span class="tag">opencode</span>
-          <span class="tag">Claude Opus 4.6</span>
+          <span class="tag" id="model-reviewer">Claude Opus 4.6</span>
         </div>
         <div class="agent-status-row">
           <div>
@@ -707,7 +707,7 @@
         <div class="agent-role">Cleanup &middot; Patterns &middot; Tech debt</div>
         <div class="agent-stack">
           <span class="tag">opencode</span>
-          <span class="tag">Claude Sonnet 4.6</span>
+          <span class="tag" id="model-refactor">Claude Sonnet 4.6</span>
         </div>
         <div class="agent-status-row">
           <div>
@@ -794,7 +794,8 @@
   const AGENTS = {
     planner: {
       icon: '\u{1F9E0}', title: 'Planner', color: '#00d4ff', barClass: 'bar-planner',
-      subtitle: 'opencode \u00B7 Claude Opus 4.6',
+      subtitle: 'opencode',
+      defaultModel: 'Claude Opus 4.6',
       command: 'opencode --agent planner -m github-copilot/claude-opus-4.6',
       tips: [
         'Use for high-level decisions before writing code',
@@ -804,7 +805,8 @@
     },
     coder: {
       icon: '\u26A1', title: 'Coder', color: '#7c3aed', barClass: 'bar-coder',
-      subtitle: 'gh copilot CLI \u00B7 GPT-5.3 Codex',
+      subtitle: 'gh copilot CLI',
+      defaultModel: 'GPT-5.3 Codex',
       command: 'gh copilot -- --model gpt-5.3-codex',
       tips: [
         'Full coding agent with file read/write and terminal access',
@@ -814,7 +816,8 @@
     },
     reviewer: {
       icon: '\uD83D\uDD0D', title: 'Reviewer', color: '#10b981', barClass: 'bar-reviewer',
-      subtitle: 'opencode \u00B7 Claude Opus 4.6',
+      subtitle: 'opencode',
+      defaultModel: 'Claude Opus 4.6',
       command: 'opencode --agent reviewer -m github-copilot/claude-opus-4.6',
       tips: [
         'Run after every Coder session before merging',
@@ -824,7 +827,8 @@
     },
     refactor: {
       icon: '\u267B\uFE0F', title: 'Refactor', color: '#f59e0b', barClass: 'bar-refactor',
-      subtitle: 'opencode \u00B7 Claude Sonnet 4.6',
+      subtitle: 'opencode',
+      defaultModel: 'Claude Sonnet 4.6',
       command: 'opencode --agent refactor -m github-copilot/claude-sonnet-4.6',
       tips: [
         'Schedule periodically \u2014 not after every feature',
@@ -837,6 +841,7 @@
   // ─── State ────────────────────────────────────────────────────
   let isOnline = false;
   let lastFeedLength = 0;
+  let lastAgentsData = {};
   const STATE_LABELS = {
     idle: 'Idle',
     active: 'In Session',
@@ -868,6 +873,7 @@
       const data = await res.json();
       setOnline(true);
       updateCards(data.agents);
+      lastAgentsData = data.agents || {};
     } catch (e) {
       setOnline(false);
     }
@@ -927,6 +933,13 @@
       } else {
         msgEl.textContent = '';
         msgEl.style.display = 'none';
+      }
+
+      const modelEl = document.getElementById(`model-${name}`);
+      if (modelEl) {
+        modelEl.textContent = info.model
+          ? formatModelName(info.model)
+          : (AGENTS[name]?.defaultModel || '');
       }
 
       if (state === 'active') activeCount++;
@@ -998,6 +1011,18 @@
     return div.innerHTML;
   }
 
+  function formatModelName(modelID) {
+    if (!modelID) return '';
+    return modelID
+      .split('-')
+      .map(part => {
+        if (/^\d/.test(part)) return part;
+        if (part.toLowerCase() === 'gpt') return 'GPT';
+        return part.charAt(0).toUpperCase() + part.slice(1);
+      })
+      .join(' ');
+  }
+
   // ─── Copy command ─────────────────────────────────────────────
   function copyCmd(agentKey) {
     const agent = AGENTS[agentKey];
@@ -1022,7 +1047,10 @@
     document.getElementById('modalBar').className = 'modal-bar ' + a.barClass;
     document.getElementById('modalIcon').textContent = a.icon;
     document.getElementById('modalTitle').textContent = a.title + ' Agent';
-    document.getElementById('modalSubtitle').textContent = a.subtitle;
+    const liveModel = lastAgentsData[type]?.model
+      ? formatModelName(lastAgentsData[type].model)
+      : a.defaultModel;
+    document.getElementById('modalSubtitle').textContent = `${a.subtitle} · ${liveModel}`;
     document.querySelector('.modal').style.setProperty('--modal-color', a.color);
 
     document.getElementById('modalBody').innerHTML = `
