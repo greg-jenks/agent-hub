@@ -7,7 +7,7 @@ Live-updating dashboard + multi-agent terminal setup for orchestrating 4 AI codi
 | Agent | Role | Tool | Model | Color |
 |-------|------|------|-------|-------|
 | Planner | Architecture, strategy, scoping | opencode | claude-opus-4.6 | Cyan |
-| Coder | Implementation | gh copilot | gpt-5.2-codex | Purple |
+| Coder | Implementation | gh copilot | gpt-5.3-codex | Purple |
 | Reviewer | Bugs, security, quality | opencode | claude-opus-4.6 | Green |
 | Refactor | Cleanup, patterns, tech debt | opencode | claude-sonnet-4.6 | Amber |
 
@@ -130,11 +130,11 @@ agent-hub/
 
 ## Changing the Coder Model
 
-The Coder agent currently uses `gh copilot --model gpt-5.2-codex`. To switch models, edit one file:
+The Coder agent currently uses `gh copilot -- --model gpt-5.3-codex`. To switch models, edit one file:
 
 ```powershell
 # scripts/coder.ps1 — change the command on the line that runs gh copilot
-gh copilot --model gpt-5.3-codex  # or whatever becomes available
+gh copilot -- --model gpt-5.3-codex  # or whatever becomes available
 ```
 
 To move Coder to opencode instead of gh copilot, create `~/.config/opencode/agents/coder.md` and update `scripts/coder.ps1` to call `opencode --agent coder -m <model>`.

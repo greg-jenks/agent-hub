@@ -17,13 +17,13 @@ function Post-Status {
 
 Write-Host ""
 Write-Host "  === CODER AGENT ===" -ForegroundColor Magenta
-Write-Host "  Model: GPT-5.2 Codex (gh copilot)" -ForegroundColor DarkMagenta
+Write-Host "  Model: GPT-5.3 Codex (gh copilot)" -ForegroundColor DarkMagenta
 Write-Host ""
 
 Post-Status -State "active" -Message "Session started"
 
 try {
-    gh copilot -- --model gpt-5.2-codex
+    gh copilot -- --model gpt-5.3-codex
 } finally {
     Post-Status -State "done" -Message "Session ended"
     Write-Host ""
