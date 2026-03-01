@@ -223,13 +223,34 @@
     box-shadow: 0 0 0 1px var(--agent-dim), inset 0 0 30px var(--agent-glow);
   }
 
-  /* Attention state — card border pulses */
+  /* Attention state — card border + background pulses */
   .agent-card.state-attention {
     animation: attentionPulse 1s infinite;
+    background: var(--agent-glow);
   }
   @keyframes attentionPulse {
-    0%, 100% { box-shadow: 0 0 0 1px var(--agent-dim), inset 0 0 30px var(--agent-glow); }
-    50% { box-shadow: 0 0 15px 3px var(--agent-dim), inset 0 0 50px var(--agent-glow); }
+    0%, 100% { box-shadow: 0 0 0 1px var(--agent-dim), inset 0 0 30px var(--agent-glow); background: var(--agent-glow); }
+    50% { box-shadow: 0 0 15px 3px var(--agent-dim), inset 0 0 50px var(--agent-glow); background: var(--agent-dim); }
+  }
+
+  /* Awaiting input — card visually stands out so user knows this agent needs them */
+  .agent-card.substatus-awaiting-input {
+    border-color: var(--agent-color);
+    animation: awaitingPulse 2.5s ease-in-out infinite;
+  }
+  @keyframes awaitingPulse {
+    0%, 100% {
+      box-shadow: 0 0 0 1px var(--agent-dim), inset 0 0 30px var(--agent-glow);
+    }
+    50% {
+      box-shadow: 0 0 10px 2px var(--agent-dim), inset 0 0 40px var(--agent-glow);
+    }
+  }
+
+  /* Awaiting badge gets a highlighted background */
+  .agent-card.substatus-awaiting-input .agent-badge {
+    background: var(--agent-dim);
+    border-color: var(--agent-color);
   }
 
   .agent-header {
@@ -385,9 +406,44 @@
   .status-dot.done { filter: brightness(0.6); }
   .status-dot.error { background: #dc2626; animation: pulse 1s infinite; }
 
+  /* Substatus dot overrides (when agent is active with known substatus) */
+  .status-dot.thinking {
+    animation: thinkingPulse 1s infinite;
+  }
+  .status-dot.tool {
+    animation: toolSpin 1.5s linear infinite;
+    border-radius: 2px;
+  }
+  .status-dot.responding {
+    animation: pulse 0.8s infinite;
+  }
+  .status-dot.awaiting-input {
+    animation: awaitDotPulse 2s ease-in-out infinite;
+  }
+
   @keyframes attentionDot {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.3; transform: scale(1.3); }
+  }
+  @keyframes thinkingPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.2); }
+  }
+  @keyframes toolSpin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  @keyframes awaitDotPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.6; transform: scale(1.4); }
+  }
+
+  .substatus-label {
+    font-size: 10px;
+    color: var(--agent-color);
+    opacity: 0.8;
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 0.05em;
   }
 
   .agent-message {
@@ -495,6 +551,97 @@
     text-align: center;
     padding: 20px;
     font-style: italic;
+  }
+
+  /* Learnings panel */
+  .learnings-panel {
+    margin-bottom: 32px;
+  }
+
+  .learnings-feed {
+    padding: 14px 18px;
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .learnings-feed::-webkit-scrollbar { width: 4px; }
+  .learnings-feed::-webkit-scrollbar-track { background: transparent; }
+  .learnings-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .learning-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 11px;
+    animation: fadeSlide 0.4s ease;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+  .learning-item:hover {
+    background: rgba(255,255,255,0.03);
+    border-color: var(--border);
+  }
+
+  .learning-type {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .learning-type.learning { background: rgba(0, 212, 255, 0.15); color: #00d4ff; }
+  .learning-type.conversation { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
+  .learning-type.mistake { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+  .learning-type.project_context { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+
+  .learning-body { flex: 1; min-width: 0; }
+
+  .learning-title {
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.4;
+    margin-bottom: 2px;
+  }
+
+  .learning-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .learning-project {
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--planner-primary);
+    opacity: 0.7;
+  }
+
+  .learning-content {
+    display: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .learning-item.expanded .learning-content {
+    display: block;
+    max-height: 300px;
+    overflow-y: auto;
   }
 
   /* Quick-launch panel */
@@ -803,6 +950,17 @@
 
   </div>
 
+  <div class="section-label">Recent Learnings</div>
+  <div class="panel learnings-panel">
+    <div class="panel-head">
+      <span>Learnings Feed</span>
+      <span id="learningsCount">0 entries</span>
+    </div>
+    <div class="learnings-feed" id="learningsFeed">
+      <div class="feed-empty">No learnings yet.</div>
+    </div>
+  </div>
+
   <div class="bottom-grid">
 
     <!-- Activity feed -->
@@ -869,6 +1027,8 @@
   // ─── Configuration ────────────────────────────────────────────
   const API_BASE = 'http://localhost:3747';
   const MAX_VISIBLE_FEED = 20;
+  const LEARNINGS_POLL_INTERVAL = 30_000;
+  const VALID_LEARNING_TYPES = ['learning', 'conversation', 'mistake', 'project_context'];
 
   const AGENTS = {
     planner: {
@@ -935,6 +1095,18 @@
     done: 'Done',
     error: 'Error'
   };
+  const SUBSTATUS_LABELS = {
+    thinking: 'Thinking...',
+    tool: 'Running tool',
+    responding: 'Responding...',
+    'awaiting-input': 'Awaiting input'
+  };
+  const SUBSTATUS_BADGE = {
+    thinking: '\uD83E\uDDE0 Thinking',
+    tool: '\u2699\uFE0F Tool',
+    responding: '\uD83D\uDCAC Responding',
+    'awaiting-input': '\u23F3 Waiting'
+  };
 
   // ─── Clock ────────────────────────────────────────────────────
   function tick() {
@@ -969,6 +1141,17 @@
     }
   }
 
+  async function pollLearnings() {
+    try {
+      const res = await fetch(`${API_BASE}/learnings?limit=20`);
+      if (!res.ok) return;
+      const items = await res.json();
+      updateLearnings(items);
+    } catch (e) {
+      // silent — status poll handles offline state
+    }
+  }
+
   function connectSSE() {
     eventSource = new EventSource(`${API_BASE}/stream`);
 
@@ -984,6 +1167,7 @@
             updateCards(data.status?.agents || {});
             lastAgentsData = data.status?.agents || {};
             updateFeed(data.feed || []);
+            updateLearnings(data.learnings || []);
             break;
           case 'agent-update':
             if (!lastAgentsData || typeof lastAgentsData !== 'object') {
@@ -1019,6 +1203,7 @@
   function updateCards(agents) {
     let activeCount = 0;
     let attentionCount = 0;
+    let awaitingCount = 0;
 
     for (const [name, info] of Object.entries(agents || {})) {
       const card = document.getElementById(`card-${name}`);
@@ -1030,9 +1215,10 @@
       if (!card) continue;
 
       const state = info.state || 'idle';
+      const substatus = info.substatus;
 
-      // Remove old state classes, add new one
-      card.className = card.className.replace(/state-\w+/g, '');
+      // Remove old state/substatus classes, add current state class
+      card.className = card.className.replace(/state-\w+/g, '').replace(/substatus-[\w-]+/g, '').replace(/\s+/g, ' ').trim();
       if (state !== 'idle') card.classList.add(`state-${state}`);
 
       // Update dot
@@ -1040,9 +1226,32 @@
 
       // Update label
       stateEl.textContent = STATE_LABELS[state] || state;
+      stateEl.classList.remove('substatus-label');
 
       // Update badge
       badge.textContent = BADGE_LABELS[state] || state;
+
+      // Substatus rendering (overrides generic "active" display when substatus is known)
+      if (state === 'active' && substatus) {
+        dot.className = 'status-dot ' + substatus;
+
+        let label = SUBSTATUS_LABELS[substatus] || substatus;
+        if (substatus === 'tool' && info.toolName) {
+          label = `Running: ${info.toolName}`;
+        }
+        stateEl.textContent = label;
+        stateEl.classList.add('substatus-label');
+
+        let badgeLabel = SUBSTATUS_BADGE[substatus] || substatus;
+        if (substatus === 'tool' && info.toolName) {
+          badgeLabel = `⚙️ ${info.toolName}`;
+        }
+        badge.textContent = badgeLabel;
+
+        if (substatus === 'awaiting-input') {
+          card.classList.add('substatus-awaiting-input');
+        }
+      }
 
       // Update message
       if (info.message) {
@@ -1083,13 +1292,18 @@
         activityEl.style.display = 'none';
       }
 
-      if (state === 'active') activeCount++;
+      if (state === 'active' && substatus === 'awaiting-input') {
+        awaitingCount++;
+      } else if (state === 'active') {
+        activeCount++;
+      }
       if (state === 'attention') attentionCount++;
     }
 
     // Update header count
     const parts = [];
     if (attentionCount > 0) parts.push(`${attentionCount} need attention`);
+    if (awaitingCount > 0) parts.push(`${awaitingCount} awaiting input`);
     if (activeCount > 0) parts.push(`${activeCount} active`);
     document.getElementById('agentCount').textContent =
       parts.length > 0 ? parts.join(', ') : '4 agents configured';
@@ -1097,6 +1311,8 @@
     // Update tab title
     if (attentionCount > 0) {
       document.title = `(\u26A0 ${attentionCount}) Agent Hub`;
+    } else if (awaitingCount > 0) {
+      document.title = `(\u23F3 ${awaitingCount}) Agent Hub`;
     } else if (activeCount > 0) {
       document.title = `(${activeCount}) Agent Hub`;
     } else {
@@ -1145,6 +1361,42 @@
     }).join('');
 
     countEl.textContent = `${visibleItems.length} event${visibleItems.length !== 1 ? 's' : ''}`;
+  }
+
+  function updateLearnings(items) {
+    const feed = document.getElementById('learningsFeed');
+    const countEl = document.getElementById('learningsCount');
+
+    if (!items || items.length === 0) {
+      feed.innerHTML = '<div class="feed-empty">No learnings yet.</div>';
+      countEl.textContent = '0 entries';
+      return;
+    }
+
+    feed.innerHTML = items.map(item => {
+      const ago = getTimeAgo(new Date(item.created_at));
+      const project = item.project ? `<span class="learning-project">${escapeHtml(item.project)}</span>` : '';
+      const tags = item.tags ? `<span>${escapeHtml(item.tags)}</span>` : '';
+      const typeLabel = (item.type || '').replace('_', ' ');
+      const typeClass = VALID_LEARNING_TYPES.includes(item.type) ? item.type : '';
+
+      return `
+        <div class="learning-item" onclick="this.classList.toggle('expanded')">
+          <span class="learning-type ${typeClass}">${escapeHtml(typeLabel)}</span>
+          <div class="learning-body">
+            <div class="learning-title">${escapeHtml(item.title || '')}</div>
+            <div class="learning-meta">
+              ${project}
+              ${tags}
+              <span>${ago}</span>
+            </div>
+            <div class="learning-content">${escapeHtml(item.content || '')}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    countEl.textContent = `${items.length} entr${items.length !== 1 ? 'ies' : 'y'}`;
   }
 
   function addFeedItem(item) {
@@ -1282,6 +1534,8 @@
   }, 10000);
 
   // ─── Init ─────────────────────────────────────────────────────
+  pollLearnings();
+  setInterval(pollLearnings, LEARNINGS_POLL_INTERVAL);
   connectSSE();
 </script>
 </body>

@@ -26,13 +26,26 @@ const STATUS_FLUSH_INTERVAL = 5000;
 const ACTIVITY_POLL_INTERVAL = 2000;
 
 const MODEL_CACHE_TTL = 30_000;
+const LEARNINGS_CACHE_TTL = 30_000;
+const LEARNINGS_MAX_FETCH = 50;
 let modelCache = { data: {}, timestamp: 0 };
+let learningsCache = { data: [], timestamp: 0 };
 
 let opencodeDb = null;
 try {
   opencodeDb = new Database(OPENCODE_DB_PATH, { readonly: true, fileMustExist: true });
 } catch (e) {
   console.warn(`[model-query] Could not open opencode DB at ${OPENCODE_DB_PATH}: ${e.message}`);
+}
+
+const LEARNINGS_DB_PATH = process.env.LEARNINGS_DB_PATH
+  || path.join(__dirname, '..', 'learnings-mcp', 'data', 'learnings.db');
+
+let learningsDb = null;
+try {
+  learningsDb = new Database(LEARNINGS_DB_PATH, { readonly: true, fileMustExist: true });
+} catch (e) {
+  console.warn(`[learnings] Could not open learnings DB at ${LEARNINGS_DB_PATH}: ${e.message}`);
 }
 
 function getLatestModels() {
@@ -71,6 +84,31 @@ function getLatestModels() {
   } catch (e) {
     console.warn('[model-query] Failed to read opencode DB:', e.message);
     return modelCache.data;
+  }
+}
+
+function getRecentLearnings(limit = 20) {
+  const now = Date.now();
+  if (now - learningsCache.timestamp < LEARNINGS_CACHE_TTL) {
+    return learningsCache.data.slice(0, limit);
+  }
+
+  if (!learningsDb) {
+    return learningsCache.data.slice(0, limit);
+  }
+
+  try {
+    const rows = learningsDb.prepare(`
+      SELECT id, type, title, content, project, tags, created_at
+      FROM entries
+      ORDER BY created_at DESC
+      LIMIT ?
+    `).all(LEARNINGS_MAX_FETCH);
+    learningsCache = { data: rows, timestamp: now };
+    return rows.slice(0, limit);
+  } catch (e) {
+    console.warn('[learnings] Failed to read learnings DB:', e.message);
+    return learningsCache.data.slice(0, limit);
   }
 }
 
@@ -271,9 +309,165 @@ function pollOpenCodeActivity() {
         });
       }
     }
+
+    // After processing new messages, update substatus from part table
+    pollAgentSubstatus();
   } catch (e) {
     if (e.message && !e.message.includes('SQLITE_BUSY')) {
       console.warn('[activity-poll] Error:', e.message);
+    }
+  }
+}
+
+function broadcastSubstatusUpdate(agent) {
+  broadcastSSE({
+    type: 'agent-update',
+    agent,
+    data: {
+      ...agentState.agents[agent],
+      recentActivity: activityBuffers[agent].slice(0, 3)
+    }
+  });
+}
+
+// Patterns that indicate the agent is asking a question or needs user input.
+// Checked against the last ~1500 chars of the agent's response.
+const ATTENTION_PATTERNS = [
+  /\?\s*$/,
+  /\bshould I\b.*\?\s*$/im,
+  /\bwould you like\b/i,
+  /\bdo you want\b/i,
+  /\bplease (confirm|clarify|let me know|provide|specify)\b/i,
+  /\blet me know\b.*\?\s*$/im,
+  /\bneed from you\b/i,
+  /\bwhat do you think\b/i,
+  /\bwhat would you prefer\b/i,
+  /\bcan you (confirm|clarify|provide|specify)\b/i,
+  /\bwaiting for\b.*\b(input|response|answer|decision|confirmation)\b/i,
+  /\bhow would you like\b/i,
+  /\bwhich (option|approach|one)\b.*\?\s*$/im
+];
+
+function checkNeedsAttention(db, agent) {
+  try {
+    const lastText = db.prepare(`
+      SELECT json_extract(p.data, '$.text') as text
+      FROM part p
+      WHERE p.message_id = (
+        SELECT m.id FROM message m
+        WHERE json_extract(m.data, '$.agent') = ?
+          AND json_extract(m.data, '$.role') = 'assistant'
+        ORDER BY m.time_created DESC
+        LIMIT 1
+      )
+      AND json_extract(p.data, '$.type') = 'text'
+      ORDER BY p.time_created DESC
+      LIMIT 1
+    `).get(agent);
+
+    if (!lastText?.text) return false;
+
+    const tail = lastText.text.slice(-1500);
+    const matched = ATTENTION_PATTERNS.find(pattern => pattern.test(tail));
+    if (matched) {
+      console.log(`[attention] ${agent}: matched ${matched} on: "${tail.slice(-80)}"`);
+      return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function pollAgentSubstatus() {
+  if (!opencodeDb) return;
+
+  try {
+    for (const agent of OPENCODE_AGENTS) {
+      const latestPart = opencodeDb.prepare(`
+        SELECT
+          json_extract(p.data, '$.type') as partType,
+          json_extract(p.data, '$.tool') as toolName,
+          json_extract(p.data, '$.state.status') as toolStatus,
+          json_extract(p.data, '$.reason') as reason,
+          p.time_created
+        FROM part p
+        WHERE p.message_id = (
+          SELECT m.id FROM message m
+          WHERE json_extract(m.data, '$.agent') = ?
+            AND json_extract(m.data, '$.role') = 'assistant'
+          ORDER BY m.time_created DESC
+          LIMIT 1
+        )
+        ORDER BY p.time_created DESC
+        LIMIT 1
+      `).get(agent);
+
+      if (!latestPart) continue;
+
+      const currentState = agentState?.agents?.[agent]?.state;
+      if (currentState !== 'active' && currentState !== 'attention') {
+        if (agentState?.agents?.[agent]?.substatus || agentState?.agents?.[agent]?.toolName) {
+          updateAgentState(agent, { substatus: null, toolName: null });
+          broadcastSubstatusUpdate(agent);
+        }
+        continue;
+      }
+      if (currentState === 'attention') continue;
+
+      let newSubstatus = null;
+      let newToolName = null;
+
+      switch (latestPart.partType) {
+        case 'step-start':
+        case 'reasoning':
+          newSubstatus = 'thinking';
+          break;
+        case 'tool':
+          if (latestPart.toolStatus === 'running' || latestPart.toolStatus === 'pending') {
+            newSubstatus = 'tool';
+            newToolName = latestPart.toolName || 'unknown';
+          } else {
+            newSubstatus = 'thinking';
+          }
+          break;
+        case 'text':
+          newSubstatus = 'responding';
+          break;
+        case 'step-finish':
+          if (latestPart.reason === 'stop') {
+            const prev = agentState?.agents?.[agent];
+            if (prev?.substatus !== 'awaiting-input' && prev?.state !== 'attention') {
+              if (checkNeedsAttention(opencodeDb, agent)) {
+                updateAgentState(agent, {
+                  state: 'attention',
+                  substatus: 'awaiting-input',
+                  toolName: null,
+                  message: 'Waiting for your response'
+                });
+                broadcastSubstatusUpdate(agent);
+                continue;
+              }
+            }
+            newSubstatus = 'awaiting-input';
+          } else if (latestPart.reason === 'tool-calls') {
+            newSubstatus = 'thinking';
+          }
+          break;
+        default:
+          continue;
+      }
+
+      const previous = agentState?.agents?.[agent];
+      if (previous && (previous.substatus !== newSubstatus || previous.toolName !== newToolName)) {
+        updateAgentState(agent, { substatus: newSubstatus, toolName: newToolName });
+        broadcastSubstatusUpdate(agent);
+      }
+    }
+  } catch (e) {
+    if (e.message && !e.message.includes('SQLITE_BUSY')) {
+      console.warn('[substatus-poll] Error:', e.message);
     }
   }
 }
@@ -302,7 +496,12 @@ app.get('/stream', (req, res) => {
   sseClients.add(res);
   console.log(`[sse] Client connected (${sseClients.size} active)`);
 
-  res.write(`data: ${JSON.stringify({ type: 'init', status: buildStatusSnapshot(), feed: feedBuffer.slice(0, MAX_FEED_ITEMS) })}\n\n`);
+  res.write(`data: ${JSON.stringify({
+    type: 'init',
+    status: buildStatusSnapshot(),
+    feed: feedBuffer.slice(0, MAX_FEED_ITEMS),
+    learnings: getRecentLearnings(20)
+  })}\n\n`);
 
   const heartbeat = setInterval(() => {
     res.write(':heartbeat\n\n');
@@ -329,10 +528,12 @@ app.post('/status', (req, res) => {
     });
   }
 
-  updateAgentState(agent, {
-    state,
-    message: message || ''
-  });
+  const updates = { state, message: message || '' };
+  if (state !== 'active') {
+    updates.substatus = null;
+    updates.toolName = null;
+  }
+  updateAgentState(agent, updates);
 
   addFeedItem({
     agent,
@@ -357,6 +558,12 @@ app.post('/status', (req, res) => {
 app.get('/feed', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit, 10) || 20, MAX_FEED_ITEMS);
   res.json(feedBuffer.slice(0, limit));
+});
+
+app.get('/learnings', (req, res) => {
+  const parsedLimit = parseInt(req.query.limit, 10);
+  const limit = Math.min(Number.isNaN(parsedLimit) ? 20 : parsedLimit, LEARNINGS_MAX_FETCH);
+  res.json(getRecentLearnings(limit));
 });
 
 app.get('/', (req, res) => {
@@ -420,14 +627,16 @@ app.listen(PORT, () => {
   Endpoints:
     GET  /          → Dashboard HTML
     GET  /status    → Agent status JSON
-    GET  /stream    → SSE event stream
+    GET  /stream    → SSE event stream (init includes learnings)
     POST /status    → Update agent status
     GET  /feed      → Activity feed JSON
+    GET  /learnings → Recent learnings JSON
 
   POST /status body example:
     { "agent": "planner", "state": "active", "message": "Session started" }
 
   Valid agents: ${VALID_AGENTS.join(', ')}
   Valid states: ${VALID_STATES.join(', ')}
+  Learnings DB: ${learningsDb ? LEARNINGS_DB_PATH : 'unavailable'}
   `);
 });
