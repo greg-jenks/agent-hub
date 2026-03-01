@@ -8,10 +8,11 @@ $Agent = "refactor"
 function Post-Status {
     param([string]$State, [string]$Message)
     try {
-        $body = @{ agent = $Agent; state = $State; message = $Message } | ConvertTo-Json
-        Invoke-RestMethod -Uri $HubUrl -Method Post -Body $body -ContentType "application/json" -ErrorAction SilentlyContinue | Out-Null
+        $body = @{ agent = $Agent; state = $State; message = $Message } | ConvertTo-Json -Compress
+        $null = Invoke-RestMethod -Uri $HubUrl -Method Post -Body $body -ContentType "application/json" -TimeoutSec 5
+        Write-Host "  [hub] $Agent -> $State" -ForegroundColor DarkGray
     } catch {
-        # Hub might not be running — that's OK
+        Write-Host "  [hub] Failed to post status: $($_.Exception.Message)" -ForegroundColor DarkYellow
     }
 }
 
