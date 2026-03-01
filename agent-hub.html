@@ -752,7 +752,7 @@
         <div class="quick-btn coder" onclick="copyCmd('coder')">
           <div class="quick-label">&#9889; Coder</div>
           <div class="quick-sub">gh copilot CLI</div>
-          <div class="quick-cmd">gh copilot --model gpt-5.2-codex</div>
+          <div class="quick-cmd">gh copilot -- --model gpt-5.2-codex</div>
         </div>
         <div class="quick-btn reviewer" onclick="copyCmd('reviewer')">
           <div class="quick-label">&#128269; Reviewer</div>
@@ -805,7 +805,7 @@
     coder: {
       icon: '\u26A1', title: 'Coder', color: '#7c3aed', barClass: 'bar-coder',
       subtitle: 'gh copilot CLI \u00B7 GPT-5.2 Codex',
-      command: 'gh copilot --model gpt-5.2-codex',
+      command: 'gh copilot -- --model gpt-5.2-codex',
       tips: [
         'Full coding agent with file read/write and terminal access',
         'Use --allow-tool for auto-approval of specific actions',

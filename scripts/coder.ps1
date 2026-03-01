@@ -23,7 +23,7 @@ Write-Host ""
 Post-Status -State "active" -Message "Session started"
 
 try {
-    gh copilot --model gpt-5.2-codex
+    gh copilot -- --model gpt-5.2-codex
 } finally {
     Post-Status -State "done" -Message "Session ended"
     Write-Host ""
