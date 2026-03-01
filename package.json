@@ -1,0 +1,16 @@
+{
+  "name": "agent-hub",
+  "version": "1.0.0",
+  "description": "Live-updating dashboard for multi-agent coding workflow",
+  "main": "status-server.js",
+  "scripts": {
+    "start": "node status-server.js"
+  },
+  "keywords": ["agents", "dashboard", "opencode", "copilot"],
+  "author": "Greg Jenks",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0"
+  }
+}

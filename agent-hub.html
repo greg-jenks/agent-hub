@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Syne:wght@400;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c10;
+    --surface: #0d1117;
+    --border: #1e2530;
+    --text: #c9d1d9;
+    --muted: #4a5568;
+
+    --planner-primary: #00d4ff;
+    --planner-glow: rgba(0, 212, 255, 0.15);
+    --planner-dim: rgba(0, 212, 255, 0.4);
+
+    --coder-primary: #7c3aed;
+    --coder-glow: rgba(124, 58, 237, 0.15);
+    --coder-dim: rgba(124, 58, 237, 0.4);
+
+    --reviewer-primary: #10b981;
+    --reviewer-glow: rgba(16, 185, 129, 0.15);
+    --reviewer-dim: rgba(16, 185, 129, 0.4);
+
+    --refactor-primary: #f59e0b;
+    --refactor-glow: rgba(245, 158, 11, 0.15);
+    --refactor-dim: rgba(245, 158, 11, 0.4);
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  /* Grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  /* Offline banner */
+  .offline-banner {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background: rgba(220, 38, 38, 0.9);
+    color: #fff;
+    text-align: center;
+    padding: 8px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    backdrop-filter: blur(4px);
+    animation: offlinePulse 2s infinite;
+  }
+  .offline-banner.show { display: block; }
+  @keyframes offlinePulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+  }
+
+  /* Toast notification */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 300;
+    padding: 10px 18px;
+    border-radius: 6px;
+    background: rgba(16, 185, 129, 0.9);
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.3s ease;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(13, 17, 23, 0.9);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 0.1em;
+    color: #fff;
+  }
+  .logo span { color: var(--planner-primary); }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  .pulse-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--reviewer-primary);
+    animation: pulse 2s infinite;
+    display: inline-block;
+  }
+  .pulse-dot.offline { background: #dc2626; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .main {
+    padding: 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .section-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* AGENT GRID */
+  .agent-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+
+  .agent-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.25s ease;
+    position: relative;
+  }
+  .agent-card:hover { transform: translateY(-2px); }
+
+  .agent-card.planner {
+    --agent-color: var(--planner-primary);
+    --agent-glow: var(--planner-glow);
+    --agent-dim: var(--planner-dim);
+  }
+  .agent-card.coder {
+    --agent-color: var(--coder-primary);
+    --agent-glow: var(--coder-glow);
+    --agent-dim: var(--coder-dim);
+  }
+  .agent-card.reviewer {
+    --agent-color: var(--reviewer-primary);
+    --agent-glow: var(--reviewer-glow);
+    --agent-dim: var(--reviewer-dim);
+  }
+  .agent-card.refactor {
+    --agent-color: var(--refactor-primary);
+    --agent-glow: var(--refactor-glow);
+    --agent-dim: var(--refactor-dim);
+  }
+
+  .agent-card:hover, .agent-card.state-active, .agent-card.state-attention {
+    border-color: var(--agent-color);
+    box-shadow: 0 0 0 1px var(--agent-dim), inset 0 0 30px var(--agent-glow);
+  }
+
+  /* Attention state — card border pulses */
+  .agent-card.state-attention {
+    animation: attentionPulse 1s infinite;
+  }
+  @keyframes attentionPulse {
+    0%, 100% { box-shadow: 0 0 0 1px var(--agent-dim), inset 0 0 30px var(--agent-glow); }
+    50% { box-shadow: 0 0 15px 3px var(--agent-dim), inset 0 0 50px var(--agent-glow); }
+  }
+
+  .agent-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 20px 20px 0;
+  }
+
+  .agent-icon-wrap {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    background: var(--agent-glow);
+    border: 1px solid var(--agent-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+
+  .agent-badge {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    padding: 3px 8px;
+    border-radius: 20px;
+    border: 1px solid var(--agent-dim);
+    color: var(--agent-color);
+    background: var(--agent-glow);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .agent-body { padding: 14px 20px 20px; }
+
+  .agent-name {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 20px;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+
+  .agent-role {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .agent-stack {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    color: var(--agent-color);
+    opacity: 0.8;
+  }
+
+  .agent-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--agent-color);
+    flex-shrink: 0;
+  }
+  .status-dot.idle { filter: brightness(0.4); }
+  .status-dot.active { animation: pulse 1.5s infinite; }
+  .status-dot.attention { animation: attentionDot 0.6s infinite; }
+  .status-dot.done { filter: brightness(0.6); }
+  .status-dot.error { background: #dc2626; animation: pulse 1s infinite; }
+
+  @keyframes attentionDot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.3; transform: scale(1.3); }
+  }
+
+  .agent-message {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+    font-style: italic;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .launch-btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    padding: 6px 14px;
+    border-radius: 5px;
+    border: 1px solid var(--agent-dim);
+    background: var(--agent-glow);
+    color: var(--agent-color);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .launch-btn:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: var(--agent-color);
+  }
+
+  /* BOTTOM PANELS */
+  .bottom-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .panel-head {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .feed {
+    padding: 14px 18px;
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .feed::-webkit-scrollbar { width: 4px; }
+  .feed::-webkit-scrollbar-track { background: transparent; }
+  .feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .feed-item {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 11px;
+    animation: fadeSlide 0.4s ease;
+  }
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  .feed-time {
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 10px;
+    margin-top: 1px;
+  }
+
+  .feed-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+
+  .feed-msg { color: var(--text); line-height: 1.5; }
+  .feed-msg strong { font-weight: 500; }
+
+  .feed-empty {
+    color: var(--muted);
+    font-size: 11px;
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+  }
+
+  /* Quick-launch panel */
+  .quick-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 14px 18px;
+  }
+
+  .quick-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+  }
+  .quick-btn:hover {
+    border-color: var(--agent-color, var(--border));
+    background: rgba(255,255,255,0.05);
+  }
+
+  .quick-btn.planner { --agent-color: var(--planner-primary); }
+  .quick-btn.coder { --agent-color: var(--coder-primary); }
+  .quick-btn.reviewer { --agent-color: var(--reviewer-primary); }
+  .quick-btn.refactor { --agent-color: var(--refactor-primary); }
+
+  .quick-label {
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--agent-color);
+  }
+  .quick-sub {
+    font-size: 10px;
+    color: var(--muted);
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .quick-cmd {
+    font-size: 9px;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--muted);
+    margin-top: 2px;
+    opacity: 0.6;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 12px;
+    width: 520px;
+    max-width: 95vw;
+    overflow: hidden;
+    transform: translateY(16px);
+    transition: transform 0.25s;
+    border: 1px solid var(--border);
+  }
+  .modal-overlay.open .modal { transform: translateY(0); }
+
+  .modal-bar { height: 3px; }
+
+  .modal-header {
+    padding: 24px 24px 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .modal-icon { font-size: 28px; }
+  .modal-title {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 22px;
+    color: #fff;
+  }
+  .modal-subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: 'Share Tech Mono', monospace;
+    margin-top: 2px;
+  }
+
+  .modal-body {
+    padding: 20px 24px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .cmd-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+  }
+  .cmd-block.clickable { cursor: pointer; transition: border-color 0.2s; }
+  .cmd-block.clickable:hover { border-color: var(--modal-color, #444); }
+
+  .cmd-label {
+    font-size: 9px;
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .cmd-text {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: var(--modal-color, #fff);
+    word-break: break-all;
+  }
+
+  .modal-tips {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.7;
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+  }
+  .modal-tips li { margin-left: 14px; }
+
+  .modal-close {
+    width: 100%;
+    padding: 12px;
+    margin-top: 4px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .modal-close:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+
+  .bar-planner { background: var(--planner-primary); }
+  .bar-coder { background: var(--coder-primary); }
+  .bar-reviewer { background: var(--reviewer-primary); }
+  .bar-refactor { background: var(--refactor-primary); }
+</style>
+</head>
+<body>
+
+<div class="offline-banner" id="offlineBanner">SERVER OFFLINE — Cannot reach localhost:3747</div>
+<div class="toast" id="toast"></div>
+
+<header>
+  <div class="logo">AGENT <span>HUB</span></div>
+  <div class="header-status">
+    <span><span class="pulse-dot" id="headerDot"></span> &nbsp;<span id="agentCount">4 agents configured</span></span>
+    <span id="connStatus">CONNECTING...</span>
+    <span id="clock">--:--:--</span>
+  </div>
+</header>
+
+<main class="main">
+
+  <div class="section-label">Active Agents</div>
+
+  <div class="agent-grid">
+
+    <!-- PLANNER -->
+    <div class="agent-card planner" id="card-planner" onclick="openModal('planner')">
+      <div class="agent-header">
+        <div class="agent-icon-wrap">&#129504;</div>
+        <div class="agent-badge" id="badge-planner">Idle</div>
+      </div>
+      <div class="agent-body">
+        <div class="agent-name">Planner</div>
+        <div class="agent-role">Architecture &middot; Strategy &middot; Scoping</div>
+        <div class="agent-stack">
+          <span class="tag">opencode</span>
+          <span class="tag">Claude Opus 4.6</span>
+        </div>
+        <div class="agent-status-row">
+          <div>
+            <div class="status-indicator">
+              <div class="status-dot idle" id="dot-planner"></div>
+              <span id="state-planner">Idle</span>
+            </div>
+            <div class="agent-message" id="msg-planner"></div>
+          </div>
+          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('planner')">Copy Cmd</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CODER -->
+    <div class="agent-card coder" id="card-coder" onclick="openModal('coder')">
+      <div class="agent-header">
+        <div class="agent-icon-wrap">&#9889;</div>
+        <div class="agent-badge" id="badge-coder">Idle</div>
+      </div>
+      <div class="agent-body">
+        <div class="agent-name">Coder</div>
+        <div class="agent-role">Changes &middot; Features &middot; Fixes</div>
+        <div class="agent-stack">
+          <span class="tag">gh copilot</span>
+          <span class="tag">GPT-5.2 Codex</span>
+        </div>
+        <div class="agent-status-row">
+          <div>
+            <div class="status-indicator">
+              <div class="status-dot idle" id="dot-coder"></div>
+              <span id="state-coder">Idle</span>
+            </div>
+            <div class="agent-message" id="msg-coder"></div>
+          </div>
+          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('coder')">Copy Cmd</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- REVIEWER -->
+    <div class="agent-card reviewer" id="card-reviewer" onclick="openModal('reviewer')">
+      <div class="agent-header">
+        <div class="agent-icon-wrap">&#128269;</div>
+        <div class="agent-badge" id="badge-reviewer">Idle</div>
+      </div>
+      <div class="agent-body">
+        <div class="agent-name">Reviewer</div>
+        <div class="agent-role">Quality &middot; Bugs &middot; Security &middot; Style</div>
+        <div class="agent-stack">
+          <span class="tag">opencode</span>
+          <span class="tag">Claude Opus 4.6</span>
+        </div>
+        <div class="agent-status-row">
+          <div>
+            <div class="status-indicator">
+              <div class="status-dot idle" id="dot-reviewer"></div>
+              <span id="state-reviewer">Idle</span>
+            </div>
+            <div class="agent-message" id="msg-reviewer"></div>
+          </div>
+          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('reviewer')">Copy Cmd</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- REFACTOR -->
+    <div class="agent-card refactor" id="card-refactor" onclick="openModal('refactor')">
+      <div class="agent-header">
+        <div class="agent-icon-wrap">&#9851;&#65039;</div>
+        <div class="agent-badge" id="badge-refactor">Idle</div>
+      </div>
+      <div class="agent-body">
+        <div class="agent-name">Refactor</div>
+        <div class="agent-role">Cleanup &middot; Patterns &middot; Tech debt</div>
+        <div class="agent-stack">
+          <span class="tag">opencode</span>
+          <span class="tag">Claude Sonnet 4.6</span>
+        </div>
+        <div class="agent-status-row">
+          <div>
+            <div class="status-indicator">
+              <div class="status-dot idle" id="dot-refactor"></div>
+              <span id="state-refactor">Idle</span>
+            </div>
+            <div class="agent-message" id="msg-refactor"></div>
+          </div>
+          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('refactor')">Copy Cmd</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="bottom-grid">
+
+    <!-- Activity feed -->
+    <div class="panel">
+      <div class="panel-head">
+        <span>Activity Log</span>
+        <span id="feedCount">0 events</span>
+      </div>
+      <div class="feed" id="feed">
+        <div class="feed-empty">No activity yet. Start an agent to see events here.</div>
+      </div>
+    </div>
+
+    <!-- Quick launch -->
+    <div class="panel">
+      <div class="panel-head">
+        <span>Quick Launch</span>
+        <span>Click to copy command</span>
+      </div>
+      <div class="quick-grid">
+        <div class="quick-btn planner" onclick="copyCmd('planner')">
+          <div class="quick-label">&#129504; Planner</div>
+          <div class="quick-sub">opencode agent</div>
+          <div class="quick-cmd">opencode --agent planner</div>
+        </div>
+        <div class="quick-btn coder" onclick="copyCmd('coder')">
+          <div class="quick-label">&#9889; Coder</div>
+          <div class="quick-sub">gh copilot CLI</div>
+          <div class="quick-cmd">gh copilot --model gpt-5.2-codex</div>
+        </div>
+        <div class="quick-btn reviewer" onclick="copyCmd('reviewer')">
+          <div class="quick-label">&#128269; Reviewer</div>
+          <div class="quick-sub">opencode agent</div>
+          <div class="quick-cmd">opencode --agent reviewer</div>
+        </div>
+        <div class="quick-btn refactor" onclick="copyCmd('refactor')">
+          <div class="quick-label">&#9851;&#65039; Refactor</div>
+          <div class="quick-sub">opencode agent</div>
+          <div class="quick-cmd">opencode --agent refactor</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-bar" id="modalBar"></div>
+    <div class="modal-header">
+      <div class="modal-icon" id="modalIcon"></div>
+      <div>
+        <div class="modal-title" id="modalTitle"></div>
+        <div class="modal-subtitle" id="modalSubtitle"></div>
+      </div>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+  // ─── Configuration ────────────────────────────────────────────
+  const API_BASE = 'http://localhost:3747';
+  const POLL_INTERVAL = 5000;
+
+  const AGENTS = {
+    planner: {
+      icon: '\u{1F9E0}', title: 'Planner', color: '#00d4ff', barClass: 'bar-planner',
+      subtitle: 'opencode \u00B7 Claude Opus 4.6',
+      command: 'opencode --agent planner -m github-copilot/claude-opus-4.6',
+      tips: [
+        'Use for high-level decisions before writing code',
+        'Has access to learnings, QMD docs, and Shortcut via MCP',
+        'Ask it to generate task lists for the Coder agent'
+      ]
+    },
+    coder: {
+      icon: '\u26A1', title: 'Coder', color: '#7c3aed', barClass: 'bar-coder',
+      subtitle: 'gh copilot CLI \u00B7 GPT-5.2 Codex',
+      command: 'gh copilot --model gpt-5.2-codex',
+      tips: [
+        'Full coding agent with file read/write and terminal access',
+        'Use --allow-tool for auto-approval of specific actions',
+        'Will move to opencode once gpt-5.3-codex license is available'
+      ]
+    },
+    reviewer: {
+      icon: '\uD83D\uDD0D', title: 'Reviewer', color: '#10b981', barClass: 'bar-reviewer',
+      subtitle: 'opencode \u00B7 Claude Opus 4.6',
+      command: 'opencode --agent reviewer -m github-copilot/claude-opus-4.6',
+      tips: [
+        'Run after every Coder session before merging',
+        'Has access to learnings DB to check for known patterns',
+        'Paste git diffs for focused reviews'
+      ]
+    },
+    refactor: {
+      icon: '\u267B\uFE0F', title: 'Refactor', color: '#f59e0b', barClass: 'bar-refactor',
+      subtitle: 'opencode \u00B7 Claude Sonnet 4.6',
+      command: 'opencode --agent refactor -m github-copilot/claude-sonnet-4.6',
+      tips: [
+        'Schedule periodically \u2014 not after every feature',
+        'Focus on one file or module at a time',
+        'Always run tests after refactoring'
+      ]
+    }
+  };
+
+  // ─── State ────────────────────────────────────────────────────
+  let isOnline = false;
+  let lastFeedLength = 0;
+  const STATE_LABELS = {
+    idle: 'Idle',
+    active: 'In Session',
+    attention: 'Needs Attention',
+    done: 'Done',
+    error: 'Error'
+  };
+  const BADGE_LABELS = {
+    idle: 'Idle',
+    active: 'Active',
+    attention: '\u26A0 Attention',
+    done: 'Done',
+    error: 'Error'
+  };
+
+  // ─── Clock ────────────────────────────────────────────────────
+  function tick() {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('en-US', { hour12: false });
+  }
+  setInterval(tick, 1000);
+  tick();
+
+  // ─── Polling ──────────────────────────────────────────────────
+  async function pollStatus() {
+    try {
+      const res = await fetch(`${API_BASE}/status`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setOnline(true);
+      updateCards(data.agents);
+    } catch (e) {
+      setOnline(false);
+    }
+  }
+
+  async function pollFeed() {
+    try {
+      const res = await fetch(`${API_BASE}/feed?limit=20`);
+      if (!res.ok) return;
+      const items = await res.json();
+      updateFeed(items);
+    } catch (e) {
+      // silent — status poll handles offline state
+    }
+  }
+
+  function setOnline(online) {
+    isOnline = online;
+    document.getElementById('offlineBanner').classList.toggle('show', !online);
+    document.getElementById('headerDot').classList.toggle('offline', !online);
+    document.getElementById('connStatus').textContent = online ? 'LIVE' : 'OFFLINE';
+  }
+
+  // ─── Update cards ─────────────────────────────────────────────
+  function updateCards(agents) {
+    let activeCount = 0;
+    let attentionCount = 0;
+
+    for (const [name, info] of Object.entries(agents)) {
+      const card = document.getElementById(`card-${name}`);
+      const dot = document.getElementById(`dot-${name}`);
+      const stateEl = document.getElementById(`state-${name}`);
+      const msgEl = document.getElementById(`msg-${name}`);
+      const badge = document.getElementById(`badge-${name}`);
+
+      if (!card) continue;
+
+      const state = info.state || 'idle';
+
+      // Remove old state classes, add new one
+      card.className = card.className.replace(/state-\w+/g, '');
+      if (state !== 'idle') card.classList.add(`state-${state}`);
+
+      // Update dot
+      dot.className = 'status-dot ' + state;
+
+      // Update label
+      stateEl.textContent = STATE_LABELS[state] || state;
+
+      // Update badge
+      badge.textContent = BADGE_LABELS[state] || state;
+
+      // Update message
+      if (info.message) {
+        msgEl.textContent = info.message;
+        msgEl.style.display = 'block';
+      } else {
+        msgEl.textContent = '';
+        msgEl.style.display = 'none';
+      }
+
+      if (state === 'active') activeCount++;
+      if (state === 'attention') attentionCount++;
+    }
+
+    // Update header count
+    const parts = [];
+    if (attentionCount > 0) parts.push(`${attentionCount} need attention`);
+    if (activeCount > 0) parts.push(`${activeCount} active`);
+    document.getElementById('agentCount').textContent =
+      parts.length > 0 ? parts.join(', ') : '4 agents configured';
+
+    // Update tab title
+    if (attentionCount > 0) {
+      document.title = `(\u26A0 ${attentionCount}) Agent Hub`;
+    } else if (activeCount > 0) {
+      document.title = `(${activeCount}) Agent Hub`;
+    } else {
+      document.title = 'Agent Hub';
+    }
+  }
+
+  // ─── Update feed ──────────────────────────────────────────────
+  function updateFeed(items) {
+    const feed = document.getElementById('feed');
+    const countEl = document.getElementById('feedCount');
+
+    if (!items || items.length === 0) {
+      feed.innerHTML = '<div class="feed-empty">No activity yet. Start an agent to see events here.</div>';
+      countEl.textContent = '0 events';
+      return;
+    }
+
+    const agentColors = {
+      planner: 'var(--planner-primary)',
+      coder: 'var(--coder-primary)',
+      reviewer: 'var(--reviewer-primary)',
+      refactor: 'var(--refactor-primary)'
+    };
+    const agentNames = {
+      planner: 'Planner',
+      coder: 'Coder',
+      reviewer: 'Reviewer',
+      refactor: 'Refactor'
+    };
+
+    feed.innerHTML = items.map(item => {
+      const time = new Date(item.time).toLocaleTimeString('en-US', {
+        hour: '2-digit', minute: '2-digit', hour12: false
+      });
+      const color = agentColors[item.agent] || 'var(--muted)';
+      const name = agentNames[item.agent] || item.agent;
+      return `
+        <div class="feed-item">
+          <span class="feed-time">${time}</span>
+          <div class="feed-dot" style="background:${color}"></div>
+          <div class="feed-msg"><strong style="color:${color}">${name}</strong> \u2014 ${escapeHtml(item.message)}</div>
+        </div>
+      `;
+    }).join('');
+
+    countEl.textContent = `${items.length} event${items.length !== 1 ? 's' : ''}`;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // ─── Copy command ─────────────────────────────────────────────
+  function copyCmd(agentKey) {
+    const agent = AGENTS[agentKey];
+    if (!agent) return;
+    navigator.clipboard.writeText(agent.command).then(() => {
+      showToast(`Copied: ${agent.command}`);
+    });
+  }
+
+  function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2000);
+  }
+
+  // ─── Modal ────────────────────────────────────────────────────
+  function openModal(type) {
+    const a = AGENTS[type];
+    if (!a) return;
+
+    document.getElementById('modalBar').className = 'modal-bar ' + a.barClass;
+    document.getElementById('modalIcon').textContent = a.icon;
+    document.getElementById('modalTitle').textContent = a.title + ' Agent';
+    document.getElementById('modalSubtitle').textContent = a.subtitle;
+    document.querySelector('.modal').style.setProperty('--modal-color', a.color);
+
+    document.getElementById('modalBody').innerHTML = `
+      <div class="cmd-block clickable" onclick="navigator.clipboard.writeText('${a.command}').then(()=>{this.querySelector('.cmd-label').textContent='\u2713 Copied!'; setTimeout(()=>this.querySelector('.cmd-label').textContent='LAUNCH COMMAND (CLICK TO COPY)',1500)})">
+        <div class="cmd-label">Launch command (click to copy)</div>
+        <div class="cmd-text">${a.command}</div>
+      </div>
+      <ul class="modal-tips">
+        ${a.tips.map(t => `<li>${t}</li>`).join('')}
+      </ul>
+      <button class="modal-close" onclick="closeModal()">Close</button>
+    `;
+
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function closeModal(e) {
+    if (!e || e.target === document.getElementById('modalOverlay')) {
+      document.getElementById('modalOverlay').classList.remove('open');
+    }
+  }
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  // ─── Init ─────────────────────────────────────────────────────
+  pollStatus();
+  pollFeed();
+  setInterval(pollStatus, POLL_INTERVAL);
+  setInterval(pollFeed, POLL_INTERVAL);
+</script>
+</body>
+</html>
