@@ -1,5 +1,6 @@
 # Agent Hub — Planner Wrapper
-# Posts status to the hub server on start/exit
+# Posts lifecycle status to the hub server on start/exit
+# Model detection is automatic via OpenCode DB polling
 # Usage: .\scripts\planner.ps1
 
 $HubUrl = "http://localhost:3747/status"
@@ -18,13 +19,13 @@ function Post-Status {
 
 Write-Host ""
 Write-Host "  === PLANNER AGENT ===" -ForegroundColor Cyan
-Write-Host "  Model: Claude Opus 4.6 (opencode)" -ForegroundColor DarkCyan
+Write-Host "  Activity streaming: via OpenCode DB" -ForegroundColor DarkCyan
 Write-Host ""
 
 Post-Status -State "active" -Message "Session started"
 
 try {
-    opencode --agent planner -m github-copilot/claude-opus-4.6
+    opencode --agent planner
 } finally {
     Post-Status -State "done" -Message "Session ended"
     Write-Host ""

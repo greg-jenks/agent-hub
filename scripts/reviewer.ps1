@@ -1,5 +1,6 @@
 # Agent Hub — Reviewer Wrapper
-# Posts status to the hub server on start/exit
+# Posts lifecycle status to the hub server on start/exit
+# Model detection is automatic via OpenCode DB polling
 # Usage: .\scripts\reviewer.ps1
 
 $HubUrl = "http://localhost:3747/status"
@@ -18,13 +19,13 @@ function Post-Status {
 
 Write-Host ""
 Write-Host "  === REVIEWER AGENT ===" -ForegroundColor Green
-Write-Host "  Model: Claude Opus 4.6 (opencode)" -ForegroundColor DarkGreen
+Write-Host "  Activity streaming: via OpenCode DB" -ForegroundColor DarkGreen
 Write-Host ""
 
 Post-Status -State "active" -Message "Session started"
 
 try {
-    opencode --agent reviewer -m github-copilot/claude-opus-4.6
+    opencode --agent reviewer
 } finally {
     Post-Status -State "done" -Message "Session ended"
     Write-Host ""

@@ -30,7 +30,7 @@ The server runs on **http://localhost:3747**.
 
 ### 2. Open the dashboard
 
-Navigate to **http://localhost:3747** in a browser. The dashboard polls every 5 seconds for status updates.
+Navigate to **http://localhost:3747** in a browser. The dashboard uses SSE for live updates with automatic reconnect.
 
 ### 3. Launch agents
 
@@ -59,11 +59,11 @@ refactor   # launches Refactor agent
 ## Architecture
 
 ```
-agent-hub.html (browser, polls localhost:3747 every 5s)
-    |  GET /status, GET /feed
+agent-hub.html (browser, SSE stream + initial sync from localhost:3747)
+    |  GET /stream, GET /status, GET /feed
 status-server.js (Express, port 3747, serves HTML + JSON API)
-    |  POST /status (from wrapper scripts), reads/writes JSON files
-status.json + feed.json (file-based persistence, gitignored)
+    |  POST /status (from wrapper scripts), DB activity poller, periodic state flush
+status.json + feed.json (periodic crash-recovery snapshots, gitignored)
 
 PowerShell wrapper scripts  -->  POST status on agent start/exit
 opencode agent .md files    -->  role-specific system prompts
@@ -75,10 +75,10 @@ Windows Terminal profiles   -->  color-coded, auto-launch wrappers
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/` | Serves the dashboard HTML |
+| `GET` | `/stream` | Server-Sent Events stream (`init`, `agent-update`, `feed`) |
 | `GET` | `/status` | Returns all agent statuses |
 | `POST` | `/status` | Update an agent's status |
 | `GET` | `/feed` | Returns the activity feed |
-| `POST` | `/feed` | Add a feed entry |
 
 ### POST /status body
 
@@ -95,7 +95,7 @@ Valid states: `idle`, `active`, `attention`, `done`, `error`
 
 ## Dashboard Features
 
-- **Real-time polling** — 5-second refresh interval
+- **Real-time streaming** — SSE push with browser-native reconnect
 - **Attention state** — pulsing animation + tab badge for agents needing input
 - **Offline detection** — banner when server is unreachable
 - **Activity feed** — scrollable log of all status changes

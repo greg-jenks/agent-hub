@@ -287,6 +287,65 @@
     margin-bottom: 16px;
   }
 
+  .agent-current-activity {
+    margin-bottom: 14px;
+    padding: 10px;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border);
+  }
+
+  .activity-label {
+    font-size: 9px;
+    font-family: 'Share Tech Mono', monospace;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .activity-text {
+    font-size: 11px;
+    color: var(--text);
+    line-height: 1.5;
+    max-height: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+  }
+
+  .activity-time {
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 4px;
+    font-style: italic;
+  }
+
+  .typing-indicator {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+
+  .typing-indicator span {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--agent-color);
+    animation: typingPulse 1.2s infinite;
+  }
+
+  .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes typingPulse {
+    0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+    30% { opacity: 1; transform: scale(1); }
+  }
+
   .tag {
     font-family: 'Share Tech Mono', monospace;
     font-size: 10px;
@@ -631,6 +690,11 @@
           <span class="tag">opencode</span>
           <span class="tag" id="model-planner">Claude Opus 4.6</span>
         </div>
+        <div class="agent-current-activity" id="activity-planner" style="display:none;">
+          <div class="activity-label">Currently:</div>
+          <div class="activity-text" id="activity-text-planner"></div>
+          <div class="activity-time" id="activity-time-planner"></div>
+        </div>
         <div class="agent-status-row">
           <div>
             <div class="status-indicator">
@@ -656,6 +720,11 @@
         <div class="agent-stack">
           <span class="tag">gh copilot</span>
           <span class="tag" id="model-coder">GPT-5.3 Codex</span>
+        </div>
+        <div class="agent-current-activity" id="activity-coder" style="display:none;">
+          <div class="activity-label">Currently:</div>
+          <div class="activity-text" id="activity-text-coder"></div>
+          <div class="activity-time" id="activity-time-coder"></div>
         </div>
         <div class="agent-status-row">
           <div>
@@ -683,6 +752,11 @@
           <span class="tag">opencode</span>
           <span class="tag" id="model-reviewer">Claude Opus 4.6</span>
         </div>
+        <div class="agent-current-activity" id="activity-reviewer" style="display:none;">
+          <div class="activity-label">Currently:</div>
+          <div class="activity-text" id="activity-text-reviewer"></div>
+          <div class="activity-time" id="activity-time-reviewer"></div>
+        </div>
         <div class="agent-status-row">
           <div>
             <div class="status-indicator">
@@ -708,6 +782,11 @@
         <div class="agent-stack">
           <span class="tag">opencode</span>
           <span class="tag" id="model-refactor">Claude Sonnet 4.6</span>
+        </div>
+        <div class="agent-current-activity" id="activity-refactor" style="display:none;">
+          <div class="activity-label">Currently:</div>
+          <div class="activity-text" id="activity-text-refactor"></div>
+          <div class="activity-time" id="activity-time-refactor"></div>
         </div>
         <div class="agent-status-row">
           <div>
@@ -789,14 +868,14 @@
 <script>
   // ─── Configuration ────────────────────────────────────────────
   const API_BASE = 'http://localhost:3747';
-  const POLL_INTERVAL = 5000;
+  const MAX_VISIBLE_FEED = 20;
 
   const AGENTS = {
     planner: {
       icon: '\u{1F9E0}', title: 'Planner', color: '#00d4ff', barClass: 'bar-planner',
       subtitle: 'opencode',
       defaultModel: 'Claude Opus 4.6',
-      command: 'opencode --agent planner -m github-copilot/claude-opus-4.6',
+      command: 'opencode --agent planner',
       tips: [
         'Use for high-level decisions before writing code',
         'Has access to learnings, QMD docs, and Shortcut via MCP',
@@ -818,7 +897,7 @@
       icon: '\uD83D\uDD0D', title: 'Reviewer', color: '#10b981', barClass: 'bar-reviewer',
       subtitle: 'opencode',
       defaultModel: 'Claude Opus 4.6',
-      command: 'opencode --agent reviewer -m github-copilot/claude-opus-4.6',
+      command: 'opencode --agent reviewer',
       tips: [
         'Run after every Coder session before merging',
         'Has access to learnings DB to check for known patterns',
@@ -829,7 +908,7 @@
       icon: '\u267B\uFE0F', title: 'Refactor', color: '#f59e0b', barClass: 'bar-refactor',
       subtitle: 'opencode',
       defaultModel: 'Claude Sonnet 4.6',
-      command: 'opencode --agent refactor -m github-copilot/claude-sonnet-4.6',
+      command: 'opencode --agent refactor',
       tips: [
         'Schedule periodically \u2014 not after every feature',
         'Focus on one file or module at a time',
@@ -840,8 +919,8 @@
 
   // ─── State ────────────────────────────────────────────────────
   let isOnline = false;
-  let lastFeedLength = 0;
   let lastAgentsData = {};
+  let eventSource = null;
   const STATE_LABELS = {
     idle: 'Idle',
     active: 'In Session',
@@ -890,6 +969,45 @@
     }
   }
 
+  function connectSSE() {
+    eventSource = new EventSource(`${API_BASE}/stream`);
+
+    eventSource.onopen = () => {
+      setOnline(true);
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        switch (data.type) {
+          case 'init':
+            updateCards(data.status?.agents || {});
+            lastAgentsData = data.status?.agents || {};
+            updateFeed(data.feed || []);
+            break;
+          case 'agent-update':
+            if (!lastAgentsData || typeof lastAgentsData !== 'object') {
+              lastAgentsData = {};
+            }
+            lastAgentsData[data.agent] = data.data;
+            updateCards(lastAgentsData);
+            break;
+          case 'feed':
+            if (data.item) addFeedItem(data.item);
+            break;
+          default:
+            break;
+        }
+      } catch (e) {
+        console.error('[sse] Failed to parse event:', e);
+      }
+    };
+
+    eventSource.onerror = () => {
+      setOnline(false);
+    };
+  }
+
   function setOnline(online) {
     isOnline = online;
     document.getElementById('offlineBanner').classList.toggle('show', !online);
@@ -902,7 +1020,7 @@
     let activeCount = 0;
     let attentionCount = 0;
 
-    for (const [name, info] of Object.entries(agents)) {
+    for (const [name, info] of Object.entries(agents || {})) {
       const card = document.getElementById(`card-${name}`);
       const dot = document.getElementById(`dot-${name}`);
       const stateEl = document.getElementById(`state-${name}`);
@@ -940,6 +1058,29 @@
         modelEl.textContent = info.model
           ? formatModelName(info.model)
           : (AGENTS[name]?.defaultModel || '');
+      }
+
+      const activityEl = document.getElementById(`activity-${name}`);
+      const activityTextEl = document.getElementById(`activity-text-${name}`);
+      const activityTimeEl = document.getElementById(`activity-time-${name}`);
+
+      if (activityEl && activityTextEl && activityTimeEl && info.recentActivity && info.recentActivity.length > 0) {
+        const latest = info.recentActivity[0];
+        activityEl.style.display = 'block';
+        activityTextEl.textContent = (latest.content || '').substring(0, 150);
+
+        if (latest.type === 'prompt' && state === 'active') {
+          const indicator = document.createElement('span');
+          indicator.className = 'typing-indicator';
+          for (let i = 0; i < 3; i++) {
+            indicator.appendChild(document.createElement('span'));
+          }
+          activityTextEl.appendChild(indicator);
+        }
+
+        activityTimeEl.textContent = latest.timestamp ? getTimeAgo(new Date(latest.timestamp)) : '';
+      } else if (activityEl) {
+        activityEl.style.display = 'none';
       }
 
       if (state === 'active') activeCount++;
@@ -987,7 +1128,8 @@
       refactor: 'Refactor'
     };
 
-    feed.innerHTML = items.map(item => {
+    const visibleItems = items.slice(0, MAX_VISIBLE_FEED);
+    feed.innerHTML = visibleItems.map(item => {
       const time = new Date(item.time).toLocaleTimeString('en-US', {
         hour: '2-digit', minute: '2-digit', hour12: false
       });
@@ -995,14 +1137,55 @@
       const name = agentNames[item.agent] || item.agent;
       return `
         <div class="feed-item">
-          <span class="feed-time">${time}</span>
+          <span class="feed-time">${escapeHtml(time)}</span>
           <div class="feed-dot" style="background:${color}"></div>
-          <div class="feed-msg"><strong style="color:${color}">${name}</strong> \u2014 ${escapeHtml(item.message)}</div>
+          <div class="feed-msg"><strong style="color:${color}">${escapeHtml(name)}</strong> \u2014 ${escapeHtml(item.message || '')}</div>
         </div>
       `;
     }).join('');
 
-    countEl.textContent = `${items.length} event${items.length !== 1 ? 's' : ''}`;
+    countEl.textContent = `${visibleItems.length} event${visibleItems.length !== 1 ? 's' : ''}`;
+  }
+
+  function addFeedItem(item) {
+    const feed = document.getElementById('feed');
+    const countEl = document.getElementById('feedCount');
+    const empty = feed.querySelector('.feed-empty');
+    if (empty) empty.remove();
+
+    const agentColors = {
+      planner: 'var(--planner-primary)',
+      coder: 'var(--coder-primary)',
+      reviewer: 'var(--reviewer-primary)',
+      refactor: 'var(--refactor-primary)'
+    };
+    const agentNames = {
+      planner: 'Planner',
+      coder: 'Coder',
+      reviewer: 'Reviewer',
+      refactor: 'Refactor'
+    };
+
+    const time = new Date(item.time).toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', hour12: false
+    });
+    const color = agentColors[item.agent] || 'var(--muted)';
+    const name = agentNames[item.agent] || item.agent;
+
+    const el = document.createElement('div');
+    el.className = 'feed-item';
+    el.innerHTML = `
+      <span class="feed-time">${escapeHtml(time)}</span>
+      <div class="feed-dot" style="background:${color}"></div>
+      <div class="feed-msg"><strong style="color:${color}">${escapeHtml(name)}</strong> \u2014 ${escapeHtml(item.message || '')}</div>
+    `;
+    feed.insertBefore(el, feed.firstChild);
+
+    while (feed.children.length > MAX_VISIBLE_FEED) {
+      feed.removeChild(feed.lastChild);
+    }
+
+    countEl.textContent = `${feed.children.length} event${feed.children.length !== 1 ? 's' : ''}`;
   }
 
   function escapeHtml(text) {
@@ -1021,6 +1204,19 @@
         return part.charAt(0).toUpperCase() + part.slice(1);
       })
       .join(' ');
+  }
+
+  function getTimeAgo(date) {
+    const seconds = Math.floor((new Date() - date) / 1000);
+    if (seconds < 10) return 'just now';
+    if (seconds < 60) return `${seconds}s ago`;
+
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
   }
 
   // ─── Copy command ─────────────────────────────────────────────
@@ -1075,11 +1271,18 @@
 
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 
+  setInterval(() => {
+    for (const name of Object.keys(lastAgentsData || {})) {
+      const activityTimeEl = document.getElementById(`activity-time-${name}`);
+      const info = lastAgentsData[name];
+      if (activityTimeEl && info?.recentActivity?.[0]?.timestamp) {
+        activityTimeEl.textContent = getTimeAgo(new Date(info.recentActivity[0].timestamp));
+      }
+    }
+  }, 10000);
+
   // ─── Init ─────────────────────────────────────────────────────
-  pollStatus();
-  pollFeed();
-  setInterval(pollStatus, POLL_INTERVAL);
-  setInterval(pollFeed, POLL_INTERVAL);
+  connectSSE();
 </script>
 </body>
 </html>

@@ -1,5 +1,6 @@
 # Agent Hub — Refactor Wrapper
-# Posts status to the hub server on start/exit
+# Posts lifecycle status to the hub server on start/exit
+# Model detection is automatic via OpenCode DB polling
 # Usage: .\scripts\refactor.ps1
 
 $HubUrl = "http://localhost:3747/status"
@@ -18,13 +19,13 @@ function Post-Status {
 
 Write-Host ""
 Write-Host "  === REFACTOR AGENT ===" -ForegroundColor Yellow
-Write-Host "  Model: Claude Sonnet 4.6 (opencode)" -ForegroundColor DarkYellow
+Write-Host "  Activity streaming: via OpenCode DB" -ForegroundColor DarkYellow
 Write-Host ""
 
 Post-Status -State "active" -Message "Session started"
 
 try {
-    opencode --agent refactor -m github-copilot/claude-sonnet-4.6
+    opencode --agent refactor
 } finally {
     Post-Status -State "done" -Message "Session ended"
     Write-Host ""
