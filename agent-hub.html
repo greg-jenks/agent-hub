@@ -644,6 +644,115 @@
     overflow-y: auto;
   }
 
+  /* QMD search panel */
+  .qmd-panel {
+    margin-bottom: 32px;
+  }
+
+  .qmd-search-container {
+    padding: 12px 18px 0;
+  }
+
+  .qmd-search-input {
+    width: 100%;
+    padding: 10px 14px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.2s, background 0.2s;
+    box-sizing: border-box;
+  }
+  .qmd-search-input:focus {
+    border-color: var(--accent, #00d4ff);
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .qmd-search-input::placeholder {
+    color: var(--muted);
+    opacity: 0.6;
+  }
+
+  .qmd-results {
+    padding: 14px 18px;
+    max-height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .qmd-results::-webkit-scrollbar { width: 4px; }
+  .qmd-results::-webkit-scrollbar-track { background: transparent; }
+  .qmd-results::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .qmd-result-item {
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+    animation: fadeSlide 0.3s ease;
+  }
+  .qmd-result-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--border);
+  }
+
+  .qmd-result-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.4;
+    margin-bottom: 4px;
+  }
+
+  .qmd-result-path {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    opacity: 0.7;
+    margin-bottom: 6px;
+  }
+
+  .qmd-result-snippet {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .qmd-result-snippet mark {
+    background: rgba(0, 212, 255, 0.2);
+    color: #00d4ff;
+    border-radius: 2px;
+    padding: 0 2px;
+  }
+
+  .qmd-result-content {
+    display: none;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .qmd-result-item.expanded .qmd-result-content {
+    display: block;
+  }
+
+  .qmd-loading {
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 20px;
+  }
+
   /* Quick-launch panel */
   .quick-grid {
     display: grid;
@@ -850,7 +959,10 @@
             </div>
             <div class="agent-message" id="msg-planner"></div>
           </div>
-          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('planner')">Copy Cmd</button>
+          <div style="display:flex;gap:8px;">
+            <button class="launch-btn" onclick="event.stopPropagation(); resyncAgent('planner')">Resync</button>
+            <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('planner')">Copy Cmd</button>
+          </div>
         </div>
       </div>
     </div>
@@ -881,7 +993,10 @@
             </div>
             <div class="agent-message" id="msg-coder"></div>
           </div>
-          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('coder')">Copy Cmd</button>
+          <div style="display:flex;gap:8px;">
+            <button class="launch-btn" onclick="event.stopPropagation(); resyncAgent('coder')">Resync</button>
+            <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('coder')">Copy Cmd</button>
+          </div>
         </div>
       </div>
     </div>
@@ -912,7 +1027,10 @@
             </div>
             <div class="agent-message" id="msg-reviewer"></div>
           </div>
-          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('reviewer')">Copy Cmd</button>
+          <div style="display:flex;gap:8px;">
+            <button class="launch-btn" onclick="event.stopPropagation(); resyncAgent('reviewer')">Resync</button>
+            <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('reviewer')">Copy Cmd</button>
+          </div>
         </div>
       </div>
     </div>
@@ -943,7 +1061,10 @@
             </div>
             <div class="agent-message" id="msg-refactor"></div>
           </div>
-          <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('refactor')">Copy Cmd</button>
+          <div style="display:flex;gap:8px;">
+            <button class="launch-btn" onclick="event.stopPropagation(); resyncAgent('refactor')">Resync</button>
+            <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('refactor')">Copy Cmd</button>
+          </div>
         </div>
       </div>
     </div>
@@ -958,6 +1079,22 @@
     </div>
     <div class="learnings-feed" id="learningsFeed">
       <div class="feed-empty">No learnings yet.</div>
+    </div>
+  </div>
+
+  <div class="section-label">Documentation Search</div>
+  <div class="panel qmd-panel">
+    <div class="panel-head">
+      <span>QMD Docs</span>
+      <span id="qmdResultCount"></span>
+    </div>
+    <div class="qmd-search-container">
+      <input type="text" id="qmdSearchInput" class="qmd-search-input"
+             placeholder="Search 910+ NRC survey platform docs..."
+             autocomplete="off" spellcheck="false" />
+    </div>
+    <div class="qmd-results" id="qmdResults">
+      <div class="feed-empty">Type to search documentation.</div>
     </div>
   </div>
 
@@ -1028,6 +1165,7 @@
   const API_BASE = window.location.origin;
   const MAX_VISIBLE_FEED = 20;
   const LEARNINGS_POLL_INTERVAL = 30_000;
+  const QMD_DEBOUNCE_MS = 300;
   const VALID_LEARNING_TYPES = ['learning', 'conversation', 'mistake', 'project_context'];
 
   const AGENTS = {
@@ -1081,6 +1219,7 @@
   let isOnline = false;
   let lastAgentsData = {};
   let eventSource = null;
+  let qmdDebounceTimer = null;
   const STATE_LABELS = {
     idle: 'Idle',
     active: 'In Session',
@@ -1399,6 +1538,76 @@
     countEl.textContent = `${items.length} entr${items.length !== 1 ? 'ies' : 'y'}`;
   }
 
+  function sanitizeSnippet(raw) {
+    const escaped = escapeHtml(raw);
+    return escaped
+      .replace(/&lt;mark&gt;/g, '<mark>')
+      .replace(/&lt;\/mark&gt;/g, '</mark>');
+  }
+
+  async function searchQmd(query) {
+    try {
+      const res = await fetch(`${API_BASE}/qmd/search?q=${encodeURIComponent(query)}&limit=20`);
+      if (!res.ok) {
+        document.getElementById('qmdResults').innerHTML = '<div class="feed-empty">Search unavailable.</div>';
+        return;
+      }
+      const results = await res.json();
+      renderQmdResults(results);
+    } catch (e) {
+      document.getElementById('qmdResults').innerHTML = '<div class="feed-empty">Search unavailable.</div>';
+    }
+  }
+
+  function renderQmdResults(results) {
+    const container = document.getElementById('qmdResults');
+    const countEl = document.getElementById('qmdResultCount');
+
+    if (!results || results.length === 0) {
+      container.innerHTML = '<div class="feed-empty">No results found.</div>';
+      countEl.textContent = '0 results';
+      return;
+    }
+
+    container.innerHTML = results.map(r => {
+      const title = escapeHtml(r.title || r.path);
+      const pathDisplay = escapeHtml(r.path || '');
+      const snippet = sanitizeSnippet(r.snippet || '');
+
+      return `
+        <div class="qmd-result-item" onclick="toggleQmdResult(this, ${r.id})">
+          <div class="qmd-result-title">${title}</div>
+          <div class="qmd-result-path">${pathDisplay}</div>
+          <div class="qmd-result-snippet">${snippet}</div>
+          <div class="qmd-result-content" data-doc-id="${r.id}"></div>
+        </div>
+      `;
+    }).join('');
+
+    countEl.textContent = `${results.length} result${results.length !== 1 ? 's' : ''}`;
+  }
+
+  async function toggleQmdResult(el, docId) {
+    el.classList.toggle('expanded');
+
+    const contentEl = el.querySelector('.qmd-result-content');
+    if (el.classList.contains('expanded') && !contentEl.dataset.loaded) {
+      contentEl.textContent = 'Loading...';
+      try {
+        const res = await fetch(`${API_BASE}/qmd/doc/${docId}`);
+        if (res.ok) {
+          const data = await res.json();
+          contentEl.textContent = data.content || 'No content available.';
+        } else {
+          contentEl.textContent = 'Failed to load document.';
+        }
+      } catch {
+        contentEl.textContent = 'Failed to load document.';
+      }
+      contentEl.dataset.loaded = 'true';
+    }
+  }
+
   function addFeedItem(item) {
     const feed = document.getElementById('feed');
     const countEl = document.getElementById('feedCount');
@@ -1446,6 +1655,22 @@
     return div.innerHTML;
   }
 
+  document.getElementById('qmdSearchInput').addEventListener('input', (e) => {
+    clearTimeout(qmdDebounceTimer);
+    const query = e.target.value.trim();
+
+    if (!query) {
+      document.getElementById('qmdResults').innerHTML =
+        '<div class="feed-empty">Type to search documentation.</div>';
+      document.getElementById('qmdResultCount').textContent = '';
+      return;
+    }
+
+    document.getElementById('qmdResults').innerHTML =
+      '<div class="qmd-loading">Searching...</div>';
+    qmdDebounceTimer = setTimeout(() => searchQmd(query), QMD_DEBOUNCE_MS);
+  });
+
   function formatModelName(modelID) {
     if (!modelID) return '';
     return modelID
@@ -1478,6 +1703,24 @@
     navigator.clipboard.writeText(agent.command).then(() => {
       showToast(`Copied: ${agent.command}`);
     });
+  }
+
+  async function resyncAgent(agentKey) {
+    if (!AGENTS[agentKey]) return;
+    try {
+      const res = await fetch(`${API_BASE}/agents/${encodeURIComponent(agentKey)}/resync`, {
+        method: 'POST'
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.status?.agents) {
+        lastAgentsData = data.status.agents;
+        updateCards(lastAgentsData);
+      }
+      showToast(`Resynced ${AGENTS[agentKey].title}`);
+    } catch (err) {
+      showToast(`Resync failed: ${err.message}`);
+    }
   }
 
   function showToast(msg) {

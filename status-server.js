@@ -12,20 +12,27 @@ const PORT = 3747;
 const STATUS_FILE = path.join(__dirname, 'status.json');
 const FEED_FILE = path.join(__dirname, 'feed.json');
 const OPENCODE_DB_PATH = path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
+const COPILOT_SESSION_STATE_DIR = path.join(os.homedir(), '.copilot', 'session-state');
 const LEARNINGS_DB_PATH = process.env.LEARNINGS_DB_PATH
   || path.join(__dirname, '..', 'learnings-mcp', 'data', 'learnings.db');
+const QMD_DB_PATH = process.env.QMD_DB_PATH
+  || path.join(os.homedir(), '.cache', 'qmd', 'index.sqlite');
 
 const VALID_AGENTS = ['planner', 'coder', 'reviewer', 'refactor'];
 const VALID_STATES = ['idle', 'active', 'attention', 'done', 'error'];
-const OPENCODE_AGENTS = ['planner', 'reviewer', 'refactor'];
+const OPENCODE_AGENTS = ['planner', 'reviewer', 'refactor']; // Agents using opencode DB
+// Note: 'coder' uses pollCopilotActivity() instead of pollOpenCodeActivity().
 const MAX_FEED_ITEMS = 50;
 const MAX_ACTIVITY_ITEMS = 10;
 const STATUS_FLUSH_INTERVAL = 5000;
 const ACTIVITY_POLL_INTERVAL = 2000;
+const COPILOT_TOOL_APPROVAL_WAIT_MS = 2500;
 
 const MODEL_CACHE_TTL = 30_000;
 const LEARNINGS_CACHE_TTL = 30_000;
 const LEARNINGS_MAX_FETCH = 50;
+const QMD_DEFAULT_LIMIT = 20;
+const QMD_MAX_LIMIT = 50;
 
 // Patterns that indicate the agent is asking a question or needs user input.
 // Checked against the last ~1500 chars of the agent's response.
@@ -34,6 +41,9 @@ const ATTENTION_PATTERNS = [
   /\bshould I\b.*\?\s*$/im,
   /\bwould you like\b/i,
   /\bdo you want\b/i,
+  /\b(permission|approval)\s+(required|needed)\b/i,
+  /\bneeds?\s+permission\b/i,
+  /\bplease\s+approve\b/i,
   /\bplease (confirm|clarify|let me know|provide|specify)\b/i,
   /\blet me know\b.*\?\s*$/im,
   /\bneed from you\b/i,
@@ -52,9 +62,11 @@ function createApp(config = {}) {
 
   const hasOpenCodeDb = Object.prototype.hasOwnProperty.call(config, 'opencodeDb');
   const hasLearningsDb = Object.prototype.hasOwnProperty.call(config, 'learningsDb');
+  const hasQmdDb = Object.prototype.hasOwnProperty.call(config, 'qmdDb');
 
   const statusFile = config.statusFile || STATUS_FILE;
   const feedFile = config.feedFile || FEED_FILE;
+  const copilotSessionStateDir = config.copilotSessionStateDir || COPILOT_SESSION_STATE_DIR;
 
   let opencodeDb = hasOpenCodeDb ? config.opencodeDb : null;
   if (!hasOpenCodeDb) {
@@ -74,6 +86,15 @@ function createApp(config = {}) {
     }
   }
 
+  let qmdDb = hasQmdDb ? config.qmdDb : null;
+  if (!hasQmdDb) {
+    try {
+      qmdDb = new Database(QMD_DB_PATH, { readonly: true, fileMustExist: true });
+    } catch (e) {
+      console.warn(`[qmd] Could not open QMD DB at ${QMD_DB_PATH}: ${e.message}`);
+    }
+  }
+
   let modelCache = { data: {}, timestamp: 0 };
   let learningsCache = { data: [], timestamp: 0 };
 
@@ -83,6 +104,17 @@ function createApp(config = {}) {
   let feedBuffer = [];
   const activityBuffers = Object.fromEntries(VALID_AGENTS.map((agent) => [agent, []]));
   let lastSeenTimestamps = {};
+  let copilotLastEventIndex = 0;
+  let copilotSessionId = null;
+  let copilotTurnContext = {
+    hasToolCalls: false,
+    lastReasoningText: '',
+    lastIntentMessage: '',
+    requestedUserInput: false,
+    turnToolCount: 0
+  };
+  const copilotPendingAskUserToolCallIds = new Set();
+  const copilotPendingToolExecutions = new Map();
   const sseClients = new Set();
   const intervals = [];
 
@@ -187,6 +219,51 @@ function createApp(config = {}) {
     } catch (e) {
       console.warn('[learnings] Failed to read learnings DB:', e.message);
       return learningsCache.data.slice(0, limit);
+    }
+  }
+
+  function searchQmdDocs(query, limit = QMD_DEFAULT_LIMIT) {
+    if (!qmdDb || !query || !query.trim()) {
+      return [];
+    }
+
+    const parsedLimit = parseInt(limit, 10);
+    const safeLimit = Math.min(
+      Number.isNaN(parsedLimit) ? QMD_DEFAULT_LIMIT : parsedLimit,
+      QMD_MAX_LIMIT
+    );
+
+    try {
+      const sanitized = query
+        .trim()
+        .split(/\s+/)
+        .filter(t => t.length > 0)
+        .map(t => `"${t.replace(/"/g, '""')}"`)
+        .join(' ');
+
+      if (!sanitized) {
+        return [];
+      }
+
+      const rows = qmdDb.prepare(`
+        SELECT
+          d.id,
+          d.path,
+          d.title,
+          snippet(documents_fts, 2, '<mark>', '</mark>', '...', 30) as snippet,
+          rank
+        FROM documents_fts f
+        JOIN documents d ON d.id = f.rowid
+        WHERE documents_fts MATCH ?
+          AND d.active = 1
+        ORDER BY rank
+        LIMIT ?
+      `).all(sanitized, safeLimit);
+
+      return rows;
+    } catch (e) {
+      console.warn('[qmd] Search failed:', e.message);
+      return [];
     }
   }
 
@@ -296,6 +373,414 @@ function createApp(config = {}) {
     } catch {
       return false;
     }
+  }
+
+  function resetCopilotTurnContext() {
+    copilotTurnContext = {
+      hasToolCalls: false,
+      lastReasoningText: '',
+      lastIntentMessage: '',
+      requestedUserInput: false,
+      turnToolCount: 0
+    };
+    copilotPendingAskUserToolCallIds.clear();
+    copilotPendingToolExecutions.clear();
+  }
+
+  function evaluateCopilotPendingToolApproval(nowMs = Date.now()) {
+    if (copilotTurnContext.requestedUserInput || copilotPendingToolExecutions.size === 0) {
+      return;
+    }
+
+    let oldest = null;
+    for (const pending of copilotPendingToolExecutions.values()) {
+      if (!oldest || pending.startedAtMs < oldest.startedAtMs) {
+        oldest = pending;
+      }
+    }
+    if (!oldest || nowMs - oldest.startedAtMs < COPILOT_TOOL_APPROVAL_WAIT_MS) {
+      return;
+    }
+
+    const message = oldest.toolName
+      ? `Waiting for approval: ${oldest.toolName}`
+      : 'Waiting for command approval';
+    const current = agentState?.agents?.coder;
+    if (current?.state === 'attention' && current?.substatus === 'awaiting-input' && current?.message === message) {
+      return;
+    }
+
+    updateAgentState('coder', {
+      state: 'attention',
+      substatus: 'awaiting-input',
+      toolName: null,
+      message
+    });
+    addFeedItem({
+      agent: 'coder',
+      type: 'info',
+      message,
+      time: new Date(nowMs).toISOString()
+    });
+    broadcastSubstatusUpdate('coder');
+  }
+
+  function checkCopilotNeedsAttention() {
+    if (copilotTurnContext.requestedUserInput) {
+      return true;
+    }
+
+    if (copilotTurnContext.lastReasoningText) {
+      const matched = ATTENTION_PATTERNS.find((pattern) => pattern.test(copilotTurnContext.lastReasoningText));
+      if (matched) return true;
+    }
+
+    if (copilotTurnContext.lastIntentMessage) {
+      const intent = copilotTurnContext.lastIntentMessage.toLowerCase();
+      if (intent.includes('question') || intent.includes('clarif') || intent.includes('confirm')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function findActiveCopilotSession() {
+    try {
+      if (!fs.existsSync(copilotSessionStateDir)) return null;
+      const dirs = fs.readdirSync(copilotSessionStateDir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory());
+
+      let bestSession = null;
+      let bestTime = null;
+
+      for (const dir of dirs) {
+        const workspacePath = path.join(copilotSessionStateDir, dir.name, 'workspace.yaml');
+        if (!fs.existsSync(workspacePath)) continue;
+
+        const workspaceContent = fs.readFileSync(workspacePath, 'utf8');
+        const match = workspaceContent.match(/updated_at:\s*(.+)/);
+        if (!match) continue;
+
+        const updatedAt = new Date(match[1].trim());
+        if (Number.isNaN(updatedAt.getTime())) continue;
+        if (!bestTime || updatedAt > bestTime) {
+          bestTime = updatedAt;
+          bestSession = dir.name;
+        }
+      }
+
+      return bestSession;
+    } catch {
+      return null;
+    }
+  }
+
+  function initCopilotEventIndex(eventsPath) {
+    try {
+      const content = fs.readFileSync(eventsPath, 'utf8');
+      const lines = content.split('\n').filter((line) => line.trim());
+      copilotLastEventIndex = lines.length;
+
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        try {
+          const event = JSON.parse(lines[i]);
+          if (event.type === 'session.start' && event.data?.selectedModel) {
+            updateAgentState('coder', { model: event.data.selectedModel, provider: 'github-copilot' });
+            broadcastSubstatusUpdate('coder');
+            break;
+          }
+        } catch {
+          // ignore parse errors while backtracking
+        }
+      }
+    } catch {
+      copilotLastEventIndex = 0;
+    }
+  }
+
+  function processCopilotEvent(event) {
+    const { type, data = {}, timestamp = new Date().toISOString() } = event;
+
+    switch (type) {
+      case 'session.start': {
+        if (data.selectedModel) {
+          updateAgentState('coder', { model: data.selectedModel, provider: 'github-copilot' });
+          broadcastSubstatusUpdate('coder');
+        }
+        break;
+      }
+      case 'user.message': {
+        const content = data.content || '';
+        const truncated = content.substring(0, 60);
+        activityBuffers.coder.unshift({
+          type: 'prompt',
+          content: content.substring(0, 500),
+          timestamp
+        });
+        if (activityBuffers.coder.length > MAX_ACTIVITY_ITEMS) {
+          activityBuffers.coder.length = MAX_ACTIVITY_ITEMS;
+        }
+
+        updateAgentState('coder', {
+          state: 'active',
+          substatus: 'thinking',
+          message: `Working on: ${truncated}${content.length > 60 ? '...' : ''}`,
+          lastActivity: timestamp
+        });
+
+        addFeedItem({
+          agent: 'coder',
+          type: 'prompt',
+          message: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
+          time: timestamp
+        });
+        broadcastSubstatusUpdate('coder');
+        break;
+      }
+      case 'assistant.turn_start': {
+        resetCopilotTurnContext();
+        updateAgentState('coder', { substatus: 'thinking', toolName: null });
+        broadcastSubstatusUpdate('coder');
+        break;
+      }
+      case 'assistant.message': {
+        const toolRequests = Array.isArray(data.toolRequests) ? data.toolRequests : [];
+        const askUserCall = toolRequests.find((tool) => tool.name === 'ask_user');
+        const intentCall = toolRequests.find((tool) => tool.name === 'report_intent');
+        if (intentCall?.arguments) {
+          try {
+            const parsed = typeof intentCall.arguments === 'string'
+              ? JSON.parse(intentCall.arguments)
+              : intentCall.arguments;
+            if (parsed?.intent) {
+              copilotTurnContext.lastIntentMessage = parsed.intent;
+              updateAgentState('coder', { message: parsed.intent, substatus: 'thinking' });
+              addFeedItem({
+                agent: 'coder',
+                type: 'info',
+                message: parsed.intent,
+                time: timestamp
+              });
+            }
+          } catch {
+            // ignore malformed report_intent args
+          }
+        }
+
+        if (askUserCall && !copilotTurnContext.requestedUserInput) {
+          copilotTurnContext.requestedUserInput = true;
+          if (askUserCall.toolCallId) {
+            copilotPendingAskUserToolCallIds.add(askUserCall.toolCallId);
+          }
+          updateAgentState('coder', {
+            state: 'attention',
+            substatus: 'awaiting-input',
+            toolName: null,
+            message: 'Waiting for your response'
+          });
+          addFeedItem({
+            agent: 'coder',
+            type: 'info',
+            message: 'Awaiting your input',
+            time: timestamp
+          });
+        }
+
+        const realTools = toolRequests.filter(
+          (tool) => tool.name !== 'report_intent' && tool.name !== 'ask_user'
+        );
+        if (realTools.length > 0) {
+          copilotTurnContext.hasToolCalls = true;
+          updateAgentState('coder', {
+            substatus: 'tool',
+            toolName: realTools[0].name || 'unknown'
+          });
+        }
+
+        if (data.reasoningText) {
+          const reasoning = String(data.reasoningText).replace(/^\*\*|\*\*$/g, '').trim();
+          copilotTurnContext.lastReasoningText = reasoning;
+          if (reasoning) {
+            addFeedItem({
+              agent: 'coder',
+              type: 'info',
+              message: `Thinking: ${reasoning.substring(0, 80)}`,
+              time: timestamp
+            });
+          }
+        }
+
+        broadcastSubstatusUpdate('coder');
+        break;
+      }
+      case 'tool.execution_start': {
+        const toolName = data.toolName || 'unknown';
+        if (toolName === 'ask_user') {
+          if (!copilotTurnContext.requestedUserInput) {
+            copilotTurnContext.requestedUserInput = true;
+            if (data.toolCallId) {
+              copilotPendingAskUserToolCallIds.add(data.toolCallId);
+            }
+            updateAgentState('coder', {
+              state: 'attention',
+              substatus: 'awaiting-input',
+              toolName: null,
+              message: 'Waiting for your response'
+            });
+            addFeedItem({
+              agent: 'coder',
+              type: 'info',
+              message: 'Awaiting your input',
+              time: timestamp
+            });
+          }
+          broadcastSubstatusUpdate('coder');
+          break;
+        }
+        if (toolName !== 'report_intent') {
+          const startedAtMs = Number.isNaN(Date.parse(timestamp)) ? Date.now() : Date.parse(timestamp);
+          const pendingKey = data.toolCallId || `name:${toolName}`;
+          copilotPendingToolExecutions.set(pendingKey, { toolName, startedAtMs });
+        }
+        copilotTurnContext.turnToolCount += 1;
+        updateAgentState('coder', { substatus: 'tool', toolName });
+        if (toolName !== 'report_intent') {
+          addFeedItem({
+            agent: 'coder',
+            type: 'tool',
+            message: `Running: ${toolName}`,
+            time: timestamp
+          });
+        }
+        broadcastSubstatusUpdate('coder');
+        break;
+      }
+      case 'tool.execution_complete': {
+        const completedToolCallId = data.toolCallId || null;
+        if (completedToolCallId && copilotPendingAskUserToolCallIds.has(completedToolCallId)) {
+          copilotPendingAskUserToolCallIds.delete(completedToolCallId);
+          copilotTurnContext.requestedUserInput = false;
+          updateAgentState('coder', {
+            state: 'active',
+            substatus: 'thinking',
+            toolName: null,
+            message: 'Continuing...'
+          });
+          addFeedItem({
+            agent: 'coder',
+            type: 'info',
+            message: 'Input received; continuing',
+            time: timestamp
+          });
+          broadcastSubstatusUpdate('coder');
+          break;
+        }
+        if (completedToolCallId) {
+          copilotPendingToolExecutions.delete(completedToolCallId);
+        } else if (data.toolName) {
+          for (const [key, pending] of copilotPendingToolExecutions.entries()) {
+            if (pending.toolName === data.toolName) {
+              copilotPendingToolExecutions.delete(key);
+              break;
+            }
+          }
+        }
+        if (copilotTurnContext.requestedUserInput && agentState?.agents?.coder?.state === 'attention') {
+          break;
+        }
+        if (agentState?.agents?.coder?.state === 'attention' && copilotPendingToolExecutions.size === 0) {
+          updateAgentState('coder', { state: 'active', message: 'Continuing...' });
+        }
+        if (data.model) {
+          updateAgentState('coder', { model: data.model, provider: 'github-copilot' });
+        }
+        updateAgentState('coder', { substatus: 'thinking', toolName: null });
+        broadcastSubstatusUpdate('coder');
+        break;
+      }
+      case 'assistant.turn_end': {
+        copilotPendingToolExecutions.clear();
+        if (checkCopilotNeedsAttention()) {
+          updateAgentState('coder', {
+            state: 'attention',
+            substatus: 'awaiting-input',
+            toolName: null,
+            message: 'Waiting for your response'
+          });
+        } else {
+          updateAgentState('coder', {
+            substatus: 'awaiting-input',
+            toolName: null
+          });
+        }
+
+        activityBuffers.coder.unshift({
+          type: 'response',
+          content: 'Turn completed',
+          model: agentState?.agents?.coder?.model,
+          timestamp
+        });
+        if (activityBuffers.coder.length > MAX_ACTIVITY_ITEMS) {
+          activityBuffers.coder.length = MAX_ACTIVITY_ITEMS;
+        }
+
+        broadcastSubstatusUpdate('coder');
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  function pollCopilotActivity() {
+    const reportedSessionId = agentState?.agents?.coder?.sessionId || null;
+    let sessionId = reportedSessionId || copilotSessionId;
+    if (!sessionId) {
+      sessionId = findActiveCopilotSession();
+      if (!sessionId) return;
+    }
+
+    const eventsPath = path.join(copilotSessionStateDir, sessionId, 'events.jsonl');
+    if (!fs.existsSync(eventsPath)) {
+      if (sessionId === copilotSessionId) {
+        copilotSessionId = null;
+        copilotLastEventIndex = 0;
+      }
+      return;
+    }
+
+    if (sessionId !== copilotSessionId) {
+      copilotSessionId = sessionId;
+      resetCopilotTurnContext();
+      initCopilotEventIndex(eventsPath);
+      return;
+    }
+
+    let lines;
+    try {
+      const content = fs.readFileSync(eventsPath, 'utf8');
+      lines = content.split('\n').filter((line) => line.trim());
+    } catch {
+      return;
+    }
+
+    if (lines.length <= copilotLastEventIndex) {
+      evaluateCopilotPendingToolApproval();
+      return;
+    }
+    const newLines = lines.slice(copilotLastEventIndex);
+
+    for (let i = 0; i < newLines.length; i += 1) {
+      try {
+        const event = JSON.parse(newLines[i]);
+        processCopilotEvent(event);
+        copilotLastEventIndex += 1;
+      } catch {
+        break;
+      }
+    }
+    evaluateCopilotPendingToolApproval();
   }
 
   function broadcastSubstatusUpdate(agent) {
@@ -562,7 +1047,7 @@ function createApp(config = {}) {
   });
 
   app.post('/status', (req, res) => {
-    const { agent, state, message } = req.body;
+    const { agent, state, message, sessionId } = req.body;
 
     if (!agent || !VALID_AGENTS.includes(agent)) {
       return res.status(400).json({
@@ -580,7 +1065,16 @@ function createApp(config = {}) {
       updates.substatus = null;
       updates.toolName = null;
     }
+    if (sessionId) {
+      updates.sessionId = sessionId;
+    }
     updateAgentState(agent, updates);
+
+    if (agent === 'coder' && state !== 'active') {
+      copilotSessionId = null;
+      copilotLastEventIndex = 0;
+      resetCopilotTurnContext();
+    }
 
     addFeedItem({
       agent,
@@ -602,6 +1096,48 @@ function createApp(config = {}) {
     res.json({ ok: true, agent, state });
   });
 
+  app.post('/agents/:agent/resync', (req, res) => {
+    const { agent } = req.params;
+
+    if (!agent || !VALID_AGENTS.includes(agent)) {
+      return res.status(400).json({
+        error: `Invalid agent. Must be one of: ${VALID_AGENTS.join(', ')}`
+      });
+    }
+
+    if (agent === 'coder') {
+      copilotSessionId = null;
+      copilotLastEventIndex = 0;
+      resetCopilotTurnContext();
+      pollCopilotActivity();
+    } else if (opencodeDb) {
+      delete lastSeenTimestamps[agent];
+      pollOpenCodeActivity();
+    }
+
+    addFeedItem({
+      agent,
+      type: 'info',
+      message: 'Manual resync requested',
+      time: new Date().toISOString()
+    });
+
+    broadcastSSE({
+      type: 'agent-update',
+      agent,
+      data: {
+        ...agentState.agents[agent],
+        recentActivity: activityBuffers[agent].slice(0, 3)
+      }
+    });
+
+    res.json({
+      ok: true,
+      agent,
+      status: buildStatusSnapshot()
+    });
+  });
+
   app.get('/feed', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, MAX_FEED_ITEMS);
     res.json(feedBuffer.slice(0, limit));
@@ -611,6 +1147,50 @@ function createApp(config = {}) {
     const parsedLimit = parseInt(req.query.limit, 10);
     const limit = Math.min(Number.isNaN(parsedLimit) ? 20 : parsedLimit, LEARNINGS_MAX_FETCH);
     res.json(getRecentLearnings(limit));
+  });
+
+  app.get('/qmd/search', (req, res) => {
+    const query = (req.query.q || '').trim();
+    if (!query) {
+      return res.json([]);
+    }
+    const parsedLimit = parseInt(req.query.limit, 10);
+    const limit = Number.isNaN(parsedLimit) ? QMD_DEFAULT_LIMIT : parsedLimit;
+    return res.json(searchQmdDocs(query, limit));
+  });
+
+  app.get('/qmd/doc/:id', (req, res) => {
+    if (!qmdDb) {
+      return res.json({ content: '' });
+    }
+
+    const docId = parseInt(req.params.id, 10);
+    if (Number.isNaN(docId)) {
+      return res.status(400).json({ error: 'Invalid document ID' });
+    }
+
+    try {
+      const row = qmdDb.prepare(`
+        SELECT d.path, d.title, c.doc as content
+        FROM documents d
+        JOIN content c ON d.hash = c.hash
+        WHERE d.id = ? AND d.active = 1
+      `).get(docId);
+
+      if (!row) {
+        return res.status(404).json({ error: 'Document not found' });
+      }
+
+      return res.json({
+        id: docId,
+        path: row.path,
+        title: row.title,
+        content: row.content
+      });
+    } catch (e) {
+      console.warn('[qmd] Failed to fetch document:', e.message);
+      return res.status(500).json({ error: 'Failed to fetch document' });
+    }
   });
 
   app.get('/', (req, res) => {
@@ -634,11 +1214,20 @@ function createApp(config = {}) {
       intervals.push(setInterval(pollOpenCodeActivity, ACTIVITY_POLL_INTERVAL));
     }
   }
+  if (!config.skipPolling) {
+    intervals.push(setInterval(() => {
+      const coderState = agentState?.agents?.coder?.state;
+      if (coderState === 'active' || coderState === 'attention') {
+        pollCopilotActivity();
+      }
+    }, ACTIVITY_POLL_INTERVAL));
+  }
 
   return {
     app,
     getState,
     pollOpenCodeActivity,
+    pollCopilotActivity,
     cleanup,
     checkNeedsAttention,
     summarizeContent
@@ -675,6 +1264,8 @@ if (require.main === module) {
     POST /status    → Update agent status
     GET  /feed      → Activity feed JSON
     GET  /learnings → Recent learnings JSON
+    GET  /qmd/search → Search QMD docs (FTS5)
+    GET  /qmd/doc/:id → Get full document content
 
   POST /status body example:
     { "agent": "planner", "state": "active", "message": "Session started" }
@@ -682,6 +1273,7 @@ if (require.main === module) {
   Valid agents: ${VALID_AGENTS.join(', ')}
   Valid states: ${VALID_STATES.join(', ')}
   Learnings DB: ${process.env.LEARNINGS_DB_PATH || LEARNINGS_DB_PATH}
+  QMD DB: ${process.env.QMD_DB_PATH || QMD_DB_PATH}
   `);
   });
 }
