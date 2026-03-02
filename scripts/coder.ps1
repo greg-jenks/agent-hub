@@ -18,7 +18,7 @@ function Post-Status {
 
 Write-Host ""
 Write-Host "  === CODER AGENT ===" -ForegroundColor Magenta
-Write-Host "  Model: GPT-5.3 Codex (gh copilot)" -ForegroundColor DarkMagenta
+Write-Host "  Model: (detected from session)" -ForegroundColor DarkMagenta
 Write-Host ""
 
 Post-Status -State "active" -Message "Session started"

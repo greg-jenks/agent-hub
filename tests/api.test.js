@@ -63,6 +63,20 @@ test.describe('POST /status validation and write/read', () => {
     appCtx.cleanup();
     appCtx.cleanupTmpDir();
   });
+
+  test('accepts optional sessionId and persists it on agent state', async () => {
+    const appCtx = createTestApp();
+
+    await request(appCtx.app).post('/status')
+      .send({ agent: 'coder', state: 'active', message: 'running', sessionId: 'session-123' })
+      .expect(200);
+
+    const status = await request(appCtx.app).get('/status').expect(200);
+    assert.equal(status.body.agents.coder.sessionId, 'session-123');
+
+    appCtx.cleanup();
+    appCtx.cleanupTmpDir();
+  });
 });
 
 test.describe('GET /feed', () => {
