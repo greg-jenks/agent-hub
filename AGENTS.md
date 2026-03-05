@@ -38,6 +38,17 @@ Optimize for correctness, small verifiable changes, and fast iteration.
 - Use QMD search before making changes in NRC survey-platform repositories.
 - Prefer combining learnings context with QMD documentation for decisions.
 
+## SonarCloud Skill Usage
+- Use the global skill `sonarcloud-quality` from `C:\Users\gjenks\.claude\skills\sonarcloud-quality`.
+- Trigger it for pre-PR quality checks, Sonar rule lookup, and issue remediation workflows.
+- Prefer CLI calls with `--output json` when acting as an agent.
+- Read `sonar.projectKey` from `sonar-project.properties`; use `SONAR_ORG` env var for organization.
+- Standard pre-PR flow: `analysis-status` → `quality-gate` → `issues --new` → `rules show` for each rule.
+
+## Provable Commits Skill Usage
+- Use the global skill `provable-commits` from `C:\Users\gjenks\.claude\skills\provable-commits`.
+- Trigger it when drafting commit messages to follow the Provable Commits convention and include Shortcut links.
+
 ## Default Output Sections
 Always end responses with:
 - Summary
