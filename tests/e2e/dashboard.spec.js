@@ -7,12 +7,12 @@ test('dashboard initial load shows four idle cards and panels', async ({ page })
   await expect(page.locator('#card-planner')).toBeVisible();
   await expect(page.locator('#card-coder')).toBeVisible();
   await expect(page.locator('#card-reviewer')).toBeVisible();
-  await expect(page.locator('#card-refactor')).toBeVisible();
+  await expect(page.locator('#card-puddleglum')).toBeVisible();
 
   await expect(page.locator('#state-planner')).toContainText('Idle');
   await expect(page.locator('#state-coder')).toContainText('Idle');
   await expect(page.locator('#state-reviewer')).toContainText('Idle');
-  await expect(page.locator('#state-refactor')).toContainText('Idle');
+  await expect(page.locator('#state-puddleglum')).toContainText('Idle');
 
   await expect(page.locator('#feed')).toBeVisible();
   await expect(page.locator('#learningsFeed')).toBeVisible();
@@ -42,7 +42,7 @@ test('copy command button writes to clipboard', async ({ page }) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto('/');
 
-  await page.locator('#card-planner .launch-btn').click();
+  await page.locator('#card-planner .launch-btn', { hasText: 'Copy Cmd' }).click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain('planner');
 });

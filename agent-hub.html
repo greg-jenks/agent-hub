@@ -28,9 +28,9 @@
     --reviewer-glow: rgba(16, 185, 129, 0.15);
     --reviewer-dim: rgba(16, 185, 129, 0.4);
 
-    --refactor-primary: #f59e0b;
-    --refactor-glow: rgba(245, 158, 11, 0.15);
-    --refactor-dim: rgba(245, 158, 11, 0.4);
+    --puddleglum-primary: #dc2626;
+    --puddleglum-glow: rgba(220, 38, 38, 0.15);
+    --puddleglum-dim: rgba(220, 38, 38, 0.4);
   }
 
   body {
@@ -212,10 +212,10 @@
     --agent-glow: var(--reviewer-glow);
     --agent-dim: var(--reviewer-dim);
   }
-  .agent-card.refactor {
-    --agent-color: var(--refactor-primary);
-    --agent-glow: var(--refactor-glow);
-    --agent-dim: var(--refactor-dim);
+  .agent-card.puddleglum {
+    --agent-color: var(--puddleglum-primary);
+    --agent-glow: var(--puddleglum-glow);
+    --agent-dim: var(--puddleglum-dim);
   }
 
   .agent-card:hover, .agent-card.state-active, .agent-card.state-attention {
@@ -753,6 +753,302 @@
     padding: 20px;
   }
 
+  /* Envelope message indicator on agent cards */
+  .agent-msg-envelope {
+    font-size: 14px;
+    cursor: default;
+    color: rgba(239, 68, 68, 0.9);
+    transition: opacity 0.2s;
+  }
+  .agent-msg-envelope:hover {
+    opacity: 0.7;
+  }
+  .agent-msg-envelope.has-blocking {
+    color: #dc2626;
+    animation: blockingPulse 1.5s infinite;
+  }
+  @keyframes blockingPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  /* Messages panel */
+  .messages-panel {
+    margin-bottom: 32px;
+  }
+
+  .messages-toolbar {
+    padding: 12px 18px 0;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .messages-filter-btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .messages-filter-btn:hover {
+    border-color: var(--text);
+    color: var(--text);
+  }
+  .messages-filter-btn.active {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--planner-primary);
+    color: var(--planner-primary);
+  }
+
+  .messages-list {
+    padding: 14px 18px;
+    max-height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .messages-list::-webkit-scrollbar { width: 4px; }
+  .messages-list::-webkit-scrollbar-track { background: transparent; }
+  .messages-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .message-item {
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+    animation: fadeSlide 0.3s ease;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .message-item:hover {
+    background: rgba(255, 255, 255, 0.03);
+    border-color: var(--text);
+  }
+  .message-item.severity-blocking {
+    border-left: 3px solid #dc2626;
+  }
+  .message-item.severity-advisory {
+    border-left: 3px solid var(--planner-primary);
+  }
+  .message-item.severity-info {
+    border-left: 3px solid var(--muted);
+  }
+  .message-item.status-addressed {
+    opacity: 0.5;
+  }
+
+  .message-severity-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .message-severity-dot.blocking { background: #dc2626; }
+  .message-severity-dot.advisory { background: var(--planner-primary); }
+  .message-severity-dot.info { background: var(--muted); }
+
+  .message-body-preview {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .message-header-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+  }
+
+  .message-route {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .message-type-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .message-status-tag {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+  .message-status-tag.unread { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+  .message-status-tag.read { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+  .message-status-tag.addressed { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+
+  .message-snippet {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.4;
+    max-height: 40px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .message-meta {
+    font-size: 9px;
+    color: var(--muted);
+    margin-top: 4px;
+    opacity: 0.7;
+  }
+
+  /* Message detail modal */
+  .message-modal {
+    width: 600px;
+    max-width: 95vw;
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .message-modal .modal-body {
+    padding: 0;
+    gap: 0;
+    max-height: calc(80vh - 120px);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .message-modal-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 16px 24px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .message-modal-tab {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+
+  .message-modal-tab.active {
+    border-color: var(--modal-color, var(--planner-primary));
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .message-modal-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 24px 0;
+  }
+
+  .message-modal-panel {
+    display: none;
+  }
+
+  .message-modal-panel.active {
+    display: block;
+  }
+
+  .message-modal-tags {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .message-modal-body {
+    padding: 0;
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.7;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .message-modal-meta {
+    padding: 0;
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .message-modal-thread {
+    padding: 0;
+    margin-top: 14px;
+  }
+
+  .message-modal-thread-title {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+
+  .thread-message {
+    padding: 10px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    margin-bottom: 6px;
+    font-size: 11px;
+  }
+
+  .thread-message-header {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 6px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .thread-message-body {
+    color: var(--text);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .message-modal-footer {
+    padding: 12px 24px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
   /* Quick-launch panel */
   .quick-grid {
     display: grid;
@@ -781,7 +1077,7 @@
   .quick-btn.planner { --agent-color: var(--planner-primary); }
   .quick-btn.coder { --agent-color: var(--coder-primary); }
   .quick-btn.reviewer { --agent-color: var(--reviewer-primary); }
-  .quick-btn.refactor { --agent-color: var(--refactor-primary); }
+  .quick-btn.puddleglum { --agent-color: var(--puddleglum-primary); }
 
   .quick-label {
     font-family: 'Syne', sans-serif;
@@ -910,7 +1206,7 @@
   .bar-planner { background: var(--planner-primary); }
   .bar-coder { background: var(--coder-primary); }
   .bar-reviewer { background: var(--reviewer-primary); }
-  .bar-refactor { background: var(--refactor-primary); }
+  .bar-puddleglum { background: var(--puddleglum-primary); }
 </style>
 </head>
 <body>
@@ -937,7 +1233,10 @@
     <div class="agent-card planner" id="card-planner" onclick="openModal('planner')">
       <div class="agent-header">
         <div class="agent-icon-wrap">&#129504;</div>
-        <div class="agent-badge" id="badge-planner">Idle</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+          <div class="agent-badge" id="badge-planner">Idle</div>
+          <div class="agent-msg-envelope" id="msgcount-planner" style="display:none;" title="0 unread messages">&#9993;</div>
+        </div>
       </div>
       <div class="agent-body">
         <div class="agent-name">Planner</div>
@@ -971,7 +1270,10 @@
     <div class="agent-card coder" id="card-coder" onclick="openModal('coder')">
       <div class="agent-header">
         <div class="agent-icon-wrap">&#9889;</div>
-        <div class="agent-badge" id="badge-coder">Idle</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+          <div class="agent-badge" id="badge-coder">Idle</div>
+          <div class="agent-msg-envelope" id="msgcount-coder" style="display:none;" title="0 unread messages">&#9993;</div>
+        </div>
       </div>
       <div class="agent-body">
         <div class="agent-name">Coder</div>
@@ -1005,7 +1307,10 @@
     <div class="agent-card reviewer" id="card-reviewer" onclick="openModal('reviewer')">
       <div class="agent-header">
         <div class="agent-icon-wrap">&#128269;</div>
-        <div class="agent-badge" id="badge-reviewer">Idle</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+          <div class="agent-badge" id="badge-reviewer">Idle</div>
+          <div class="agent-msg-envelope" id="msgcount-reviewer" style="display:none;" title="0 unread messages">&#9993;</div>
+        </div>
       </div>
       <div class="agent-body">
         <div class="agent-name">Reviewer</div>
@@ -1035,35 +1340,38 @@
       </div>
     </div>
 
-    <!-- REFACTOR -->
-    <div class="agent-card refactor" id="card-refactor" onclick="openModal('refactor')">
+    <!-- PUDDLEGLUM -->
+    <div class="agent-card puddleglum" id="card-puddleglum" onclick="openModal('puddleglum')">
       <div class="agent-header">
-        <div class="agent-icon-wrap">&#9851;&#65039;</div>
-        <div class="agent-badge" id="badge-refactor">Idle</div>
+        <div class="agent-icon-wrap">&#128056;</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-left:auto;">
+          <div class="agent-badge" id="badge-puddleglum">Idle</div>
+          <div class="agent-msg-envelope" id="msgcount-puddleglum" style="display:none;" title="0 unread messages">&#9993;</div>
+        </div>
       </div>
       <div class="agent-body">
-        <div class="agent-name">Refactor</div>
-        <div class="agent-role">Cleanup &middot; Patterns &middot; Tech debt</div>
+        <div class="agent-name">Puddleglum</div>
+        <div class="agent-role">Pre-mortem &middot; Assumptions &middot; Frame check</div>
         <div class="agent-stack">
           <span class="tag">opencode</span>
-          <span class="tag" id="model-refactor">Claude Sonnet 4.6</span>
+          <span class="tag" id="model-puddleglum">Claude Opus 4.6</span>
         </div>
-        <div class="agent-current-activity" id="activity-refactor" style="display:none;">
+        <div class="agent-current-activity" id="activity-puddleglum" style="display:none;">
           <div class="activity-label">Currently:</div>
-          <div class="activity-text" id="activity-text-refactor"></div>
-          <div class="activity-time" id="activity-time-refactor"></div>
+          <div class="activity-text" id="activity-text-puddleglum"></div>
+          <div class="activity-time" id="activity-time-puddleglum"></div>
         </div>
         <div class="agent-status-row">
           <div>
             <div class="status-indicator">
-              <div class="status-dot idle" id="dot-refactor"></div>
-              <span id="state-refactor">Idle</span>
+              <div class="status-dot idle" id="dot-puddleglum"></div>
+              <span id="state-puddleglum">Idle</span>
             </div>
-            <div class="agent-message" id="msg-refactor"></div>
+            <div class="agent-message" id="msg-puddleglum"></div>
           </div>
           <div style="display:flex;gap:8px;">
-            <button class="launch-btn" onclick="event.stopPropagation(); resyncAgent('refactor')">Resync</button>
-            <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('refactor')">Copy Cmd</button>
+            <button class="launch-btn" onclick="event.stopPropagation(); resyncAgent('puddleglum')">Resync</button>
+            <button class="launch-btn" onclick="event.stopPropagation(); copyCmd('puddleglum')">Copy Cmd</button>
           </div>
         </div>
       </div>
@@ -1095,6 +1403,26 @@
     </div>
     <div class="qmd-results" id="qmdResults">
       <div class="feed-empty">Type to search documentation.</div>
+    </div>
+  </div>
+
+  <div class="section-label">Agent Messages</div>
+  <div class="panel messages-panel">
+    <div class="panel-head">
+      <span>Message Bus</span>
+      <span id="messagesCount">0 messages</span>
+    </div>
+    <div class="messages-toolbar">
+      <button class="messages-filter-btn active" data-filter="all" onclick="setMessageFilter('all', this)">All</button>
+      <button class="messages-filter-btn" data-filter="unread" onclick="setMessageFilter('unread', this)">Unread</button>
+      <button class="messages-filter-btn" data-filter="blocking" onclick="setMessageFilter('blocking', this)">Blocking</button>
+      <button class="messages-filter-btn" data-filter="planner" onclick="setMessageFilter('planner', this)">Planner</button>
+      <button class="messages-filter-btn" data-filter="coder" onclick="setMessageFilter('coder', this)">Coder</button>
+      <button class="messages-filter-btn" data-filter="reviewer" onclick="setMessageFilter('reviewer', this)">Reviewer</button>
+      <button class="messages-filter-btn" data-filter="puddleglum" onclick="setMessageFilter('puddleglum', this)">Puddleglum</button>
+    </div>
+    <div class="messages-list" id="messagesList">
+      <div class="feed-empty">No messages yet. Agents use <code>msg.js</code> to communicate.</div>
     </div>
   </div>
 
@@ -1133,10 +1461,10 @@
           <div class="quick-sub">opencode agent</div>
           <div class="quick-cmd">opencode --agent reviewer</div>
         </div>
-        <div class="quick-btn refactor" onclick="copyCmd('refactor')">
-          <div class="quick-label">&#9851;&#65039; Refactor</div>
+        <div class="quick-btn puddleglum" onclick="copyCmd('puddleglum')">
+          <div class="quick-label">&#128056; Puddleglum</div>
           <div class="quick-sub">opencode agent</div>
-          <div class="quick-cmd">opencode --agent refactor</div>
+          <div class="quick-cmd">opencode --agent puddleglum</div>
         </div>
       </div>
     </div>
@@ -1165,6 +1493,7 @@
   const API_BASE = window.location.origin;
   const MAX_VISIBLE_FEED = 20;
   const LEARNINGS_POLL_INTERVAL = 30_000;
+  const MESSAGES_POLL_INTERVAL = 10_000;
   const QMD_DEBOUNCE_MS = 300;
   const VALID_LEARNING_TYPES = ['learning', 'conversation', 'mistake', 'project_context'];
 
@@ -1202,15 +1531,15 @@
         'Paste git diffs for focused reviews'
       ]
     },
-    refactor: {
-      icon: '\u267B\uFE0F', title: 'Refactor', color: '#f59e0b', barClass: 'bar-refactor',
+    puddleglum: {
+      icon: '\uD83D\uDC38', title: 'Puddleglum', color: '#dc2626', barClass: 'bar-puddleglum',
       subtitle: 'opencode',
-      defaultModel: 'Claude Sonnet 4.6',
-      command: 'opencode --agent refactor',
+      defaultModel: 'Claude Opus 4.6',
+      command: 'opencode --agent puddleglum',
       tips: [
-        'Schedule periodically \u2014 not after every feature',
-        'Focus on one file or module at a time',
-        'Always run tests after refactoring'
+        'Invoke on strategic decisions, not sprint tasks',
+        'Best after a plan looks solid \u2014 consensus is when blind spots hide',
+        'One root cause only \u2014 if it gives a list, push back'
       ]
     }
   };
@@ -1220,6 +1549,7 @@
   let lastAgentsData = {};
   let eventSource = null;
   let qmdDebounceTimer = null;
+  let currentMessageFilter = 'all';
   const STATE_LABELS = {
     idle: 'Idle',
     active: 'In Session',
@@ -1291,6 +1621,239 @@
     }
   }
 
+  async function pollMessages() {
+    try {
+      const countsRes = await fetch(`${API_BASE}/api/messages/counts`);
+      if (countsRes.ok) {
+        const counts = await countsRes.json();
+        updateMessageBadges(counts);
+      }
+
+      let url = `${API_BASE}/api/messages?limit=50`;
+      if (currentMessageFilter === 'unread') {
+        url += '&status=unread';
+      } else if (currentMessageFilter === 'blocking') {
+        url += '&severity=blocking';
+      } else if (['planner', 'coder', 'reviewer', 'puddleglum'].includes(currentMessageFilter)) {
+        url += `&to=${currentMessageFilter}`;
+      }
+
+      const msgRes = await fetch(url);
+      if (!msgRes.ok) return;
+      const messages = await msgRes.json();
+      renderMessages(messages);
+    } catch (e) {
+      console.warn('[messages] Failed to poll messages:', e);
+    }
+  }
+
+  function setMessageFilter(filter, btnEl) {
+    currentMessageFilter = filter;
+    document.querySelectorAll('.messages-filter-btn').forEach(b => b.classList.remove('active'));
+    if (btnEl) btnEl.classList.add('active');
+    pollMessages();
+  }
+
+  function updateMessageBadges(counts) {
+    if (!counts) return;
+    for (const agent of ['planner', 'coder', 'reviewer', 'puddleglum']) {
+      const el = document.getElementById(`msgcount-${agent}`);
+      if (!el) continue;
+      const c = counts[agent] || { total: 0, blocking: 0 };
+      if (c.total > 0) {
+        el.style.display = '';
+        el.classList.toggle('has-blocking', c.blocking > 0);
+        el.title = c.blocking > 0
+          ? `${c.total} unread (${c.blocking} blocking)`
+          : `${c.total} unread message${c.total !== 1 ? 's' : ''}`;
+      } else {
+        el.style.display = 'none';
+      }
+    }
+  }
+
+  function escapeJsSingleQuoted(text) {
+    return String(text || '')
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/\r/g, '\\r')
+      .replace(/\n/g, '\\n');
+  }
+
+  function renderMessages(messages) {
+    const container = document.getElementById('messagesList');
+    const countEl = document.getElementById('messagesCount');
+
+    if (!messages || messages.length === 0) {
+      container.innerHTML = '<div class="feed-empty">No messages match the current filter.</div>';
+      countEl.textContent = '0 messages';
+      return;
+    }
+
+    const agentColors = {
+      planner: 'var(--planner-primary)',
+      coder: 'var(--coder-primary)',
+      reviewer: 'var(--reviewer-primary)',
+      puddleglum: 'var(--puddleglum-primary)',
+      // Legacy: kept for historical feed items
+      refactor: 'var(--puddleglum-primary)'
+    };
+
+    container.innerHTML = messages.map(msg => {
+      const from = escapeHtml(msg.from_agent || '');
+      const to = escapeHtml(msg.to_agent || '');
+      const type = escapeHtml((msg.type || '').replace(/_/g, ' '));
+      const severity = msg.severity || 'advisory';
+      const status = msg.status || 'unread';
+      const body = escapeHtml((msg.body || '').substring(0, 120));
+      const ref = msg.ref ? escapeHtml(msg.ref) : '';
+      const time = msg.created_at ? getTimeAgo(new Date(msg.created_at)) : '';
+      const messageId = escapeJsSingleQuoted(msg.id || '');
+
+      return `
+        <div class="message-item severity-${severity} status-${status}" onclick="openMessageModal('${messageId}')">
+          <div class="message-severity-dot ${severity}"></div>
+          <div class="message-body-preview">
+            <div class="message-header-row">
+              <span class="message-route" style="color:${agentColors[msg.from_agent] || 'var(--text)'}">${from}</span>
+              <span style="color:var(--muted);font-size:10px;">&rarr;</span>
+              <span class="message-route" style="color:${agentColors[msg.to_agent] || 'var(--text)'}">${to}</span>
+              <span class="message-type-tag">${type}</span>
+              <span class="message-status-tag ${status}">${status}</span>
+            </div>
+            <div class="message-snippet">${body}</div>
+            <div class="message-meta">${ref ? `ref: ${ref} &middot; ` : ''}${time}</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    countEl.textContent = `${messages.length} message${messages.length !== 1 ? 's' : ''}`;
+  }
+
+  async function openMessageModal(messageId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/messages/${encodeURIComponent(messageId)}`);
+      if (!res.ok) {
+        showToast('Failed to load message');
+        return;
+      }
+      const msg = await res.json();
+
+      let thread = [];
+      if (msg.thread_id) {
+        const threadRes = await fetch(`${API_BASE}/api/messages/thread/${encodeURIComponent(msg.thread_id)}`);
+        if (threadRes.ok) {
+          thread = await threadRes.json();
+        }
+      }
+      renderMessageModal(msg, thread);
+    } catch (e) {
+      console.warn('[messages] Failed to open message modal:', e);
+      showToast('Failed to load message');
+    }
+  }
+
+  function setMessageModalTab(tab, btnEl) {
+    const body = document.getElementById('modalBody');
+    if (!body) return;
+    body.querySelectorAll('.message-modal-tab').forEach(el => el.classList.remove('active'));
+    if (btnEl) btnEl.classList.add('active');
+    body.querySelectorAll('.message-modal-panel').forEach(el => {
+      el.classList.toggle('active', el.getAttribute('data-panel') === tab);
+    });
+  }
+
+  function renderMessageModal(msg, thread) {
+    const agentColors = {
+      planner: 'var(--planner-primary)',
+      coder: 'var(--coder-primary)',
+      reviewer: 'var(--reviewer-primary)',
+      puddleglum: 'var(--puddleglum-primary)',
+      // Legacy: kept for historical feed items
+      refactor: 'var(--puddleglum-primary)'
+    };
+
+    const severity = msg.severity || 'advisory';
+    const status = msg.status || 'unread';
+    const from = escapeHtml(msg.from_agent || '');
+    const to = escapeHtml(msg.to_agent || '');
+    const type = escapeHtml((msg.type || '').replace(/_/g, ' '));
+    const ref = msg.ref ? escapeHtml(msg.ref) : '';
+    const barColor = severity === 'blocking' ? '#dc2626' : (agentColors[msg.from_agent] || 'var(--planner-primary)');
+
+    const modal = document.querySelector('.modal');
+    modal.classList.add('message-modal');
+    document.getElementById('modalBar').style.background = barColor;
+    document.getElementById('modalBar').className = 'modal-bar';
+    document.getElementById('modalIcon').textContent = severity === 'blocking' ? '\u{1F6A8}' : '\u{1F4E8}';
+    document.getElementById('modalTitle').textContent = `${from} \u2192 ${to}`;
+    document.getElementById('modalSubtitle').textContent = `${type} \u00b7 ${severity}${ref ? ' \u00b7 ' + ref : ''}`;
+    document.querySelector('.modal').style.setProperty('--modal-color', agentColors[msg.from_agent] || '#00d4ff');
+
+    let threadHtml = '';
+    if (thread.length > 1) {
+      threadHtml = `
+        <div class="message-modal-thread">
+          <div class="message-modal-thread-title">Thread (${thread.length} messages)</div>
+          ${thread.map(t => {
+            const tFrom = escapeHtml(t.from_agent || '');
+            const tTo = escapeHtml(t.to_agent || '');
+            const tTime = t.created_at ? new Date(t.created_at).toLocaleString() : '';
+            const tStatus = t.status || '';
+            const highlight = t.id === msg.id ? 'border-color: var(--planner-primary);' : '';
+            return `
+              <div class="thread-message" style="${highlight}">
+                <div class="thread-message-header">
+                  <span style="color:${agentColors[t.from_agent] || 'var(--text)'}">${tFrom}</span>
+                  <span>&rarr;</span>
+                  <span style="color:${agentColors[t.to_agent] || 'var(--text)'}">${tTo}</span>
+                  <span class="message-status-tag ${tStatus}">${tStatus}</span>
+                  <span>${tTime}</span>
+                </div>
+                <div class="thread-message-body">${escapeHtml(t.body || '')}</div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `;
+    }
+
+    document.getElementById('modalBody').innerHTML = `
+      <div class="message-modal-tabs">
+        <button class="message-modal-tab active" onclick="setMessageModalTab('content', this)">Message</button>
+        <button class="message-modal-tab" onclick="setMessageModalTab('meta', this)">Metadata</button>
+      </div>
+      <div class="message-modal-scroll">
+        <div class="message-modal-panel active" data-panel="content">
+          <div class="message-modal-tags">
+            <span class="message-type-tag">${type}</span>
+            <span class="message-status-tag ${status}">${status}</span>
+            ${severity === 'blocking' ? '<span class="message-status-tag unread">BLOCKING</span>' : ''}
+          </div>
+          <div class="message-modal-body">${escapeHtml(msg.body || '')}</div>
+          ${threadHtml}
+        </div>
+        <div class="message-modal-panel" data-panel="meta">
+          <div class="message-modal-meta">
+            <span>ID: ${escapeHtml(msg.id || '')}</span>
+            <span>Created: ${msg.created_at ? new Date(msg.created_at).toLocaleString() : 'N/A'}</span>
+            ${msg.read_at ? `<span>Read: ${new Date(msg.read_at).toLocaleString()}</span>` : ''}
+            ${msg.addressed_at ? `<span>Addressed: ${new Date(msg.addressed_at).toLocaleString()}</span>` : ''}
+            ${msg.addressed_note ? `<span>Note: ${escapeHtml(msg.addressed_note)}</span>` : ''}
+            ${ref ? `<span>Ref: ${ref}</span>` : ''}
+            <span>Thread: ${escapeHtml(msg.thread_id || '')}</span>
+          </div>
+        </div>
+      </div>
+      <div class="message-modal-footer">
+        <button class="modal-close" onclick="closeModal()">Close</button>
+      </div>
+    `;
+
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
   function connectSSE() {
     eventSource = new EventSource(`${API_BASE}/stream`);
 
@@ -1307,6 +1870,7 @@
             lastAgentsData = data.status?.agents || {};
             updateFeed(data.feed || []);
             updateLearnings(data.learnings || []);
+            if (data.messageCounts) updateMessageBadges(data.messageCounts);
             break;
           case 'agent-update':
             if (!lastAgentsData || typeof lastAgentsData !== 'object') {
@@ -1317,6 +1881,9 @@
             break;
           case 'feed':
             if (data.item) addFeedItem(data.item);
+            break;
+          case 'message-counts':
+            updateMessageBadges(data.counts);
             break;
           default:
             break;
@@ -1474,12 +2041,16 @@
       planner: 'var(--planner-primary)',
       coder: 'var(--coder-primary)',
       reviewer: 'var(--reviewer-primary)',
-      refactor: 'var(--refactor-primary)'
+      puddleglum: 'var(--puddleglum-primary)',
+      // Legacy: kept for historical feed items
+      refactor: 'var(--puddleglum-primary)'
     };
     const agentNames = {
       planner: 'Planner',
       coder: 'Coder',
       reviewer: 'Reviewer',
+      puddleglum: 'Puddleglum',
+      // Legacy: kept for historical feed items
       refactor: 'Refactor'
     };
 
@@ -1618,12 +2189,16 @@
       planner: 'var(--planner-primary)',
       coder: 'var(--coder-primary)',
       reviewer: 'var(--reviewer-primary)',
-      refactor: 'var(--refactor-primary)'
+      puddleglum: 'var(--puddleglum-primary)',
+      // Legacy: kept for historical feed items
+      refactor: 'var(--puddleglum-primary)'
     };
     const agentNames = {
       planner: 'Planner',
       coder: 'Coder',
       reviewer: 'Reviewer',
+      puddleglum: 'Puddleglum',
+      // Legacy: kept for historical feed items
       refactor: 'Refactor'
     };
 
@@ -1734,6 +2309,7 @@
   function openModal(type) {
     const a = AGENTS[type];
     if (!a) return;
+    document.querySelector('.modal').classList.remove('message-modal');
 
     document.getElementById('modalBar').className = 'modal-bar ' + a.barClass;
     document.getElementById('modalIcon').textContent = a.icon;
@@ -1761,6 +2337,7 @@
   function closeModal(e) {
     if (!e || e.target === document.getElementById('modalOverlay')) {
       document.getElementById('modalOverlay').classList.remove('open');
+      document.querySelector('.modal').classList.remove('message-modal');
     }
   }
 
@@ -1780,6 +2357,8 @@
   pollLearnings();
   setInterval(pollLearnings, LEARNINGS_POLL_INTERVAL);
   connectSSE();
+  pollMessages();
+  setInterval(pollMessages, MESSAGES_POLL_INTERVAL);
 </script>
 </body>
 </html>

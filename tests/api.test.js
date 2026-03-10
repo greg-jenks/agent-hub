@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const request = require('supertest');
 const { createTestApp } = require('./helpers/create-app');
-const { createLearningsDb } = require('./helpers/db-fixtures');
+const { createLearningsDb, createMessagesDb } = require('./helpers/db-fixtures');
 const { VALID_AGENTS } = require('../status-server');
 
 test.describe('GET /status', () => {
@@ -136,6 +136,86 @@ test.describe('GET /learnings and /', () => {
   test('serves html at /', async () => {
     const appCtx = createTestApp();
     await request(appCtx.app).get('/').expect(200).expect('Content-Type', /text\/html/);
+    appCtx.cleanup();
+    appCtx.cleanupTmpDir();
+  });
+});
+
+test.describe('GET /api/messages*', () => {
+  test('returns empty counts shape with null db', async () => {
+    const appCtx = createTestApp({ messagesDb: null });
+    const res = await request(appCtx.app).get('/api/messages/counts').expect(200);
+    assert.deepEqual(Object.keys(res.body).sort(), [...VALID_AGENTS].sort());
+    for (const agent of VALID_AGENTS) {
+      assert.deepEqual(res.body[agent], { total: 0, blocking: 0 });
+    }
+    appCtx.cleanup();
+    appCtx.cleanupTmpDir();
+  });
+
+  test('returns unread counts from fixture db', async () => {
+    const messagesDb = createMessagesDb([
+      { id: 'm1', from_agent: 'reviewer', to_agent: 'coder', type: 'diff_feedback', severity: 'blocking', status: 'unread', body: 'fix validation' },
+      { id: 'm2', from_agent: 'planner', to_agent: 'coder', type: 'question', severity: 'advisory', status: 'unread', body: 'need paging?' },
+      { id: 'm3', from_agent: 'coder', to_agent: 'reviewer', type: 'info', severity: 'info', status: 'read', body: 'done' }
+    ]);
+    const appCtx = createTestApp({ messagesDb });
+    const res = await request(appCtx.app).get('/api/messages/counts').expect(200);
+    assert.deepEqual(res.body.coder, { total: 2, blocking: 1 });
+    assert.deepEqual(res.body.reviewer, { total: 0, blocking: 0 });
+    messagesDb.close();
+    appCtx.cleanup();
+    appCtx.cleanupTmpDir();
+  });
+
+  test('filters message list by to, severity, and status', async () => {
+    const messagesDb = createMessagesDb([
+      { id: 'm1', from_agent: 'reviewer', to_agent: 'coder', type: 'diff_feedback', severity: 'blocking', status: 'unread', body: 'fix validation', created_at: '2026-01-03T00:00:00.000Z' },
+      { id: 'm2', from_agent: 'planner', to_agent: 'coder', type: 'question', severity: 'advisory', status: 'unread', body: 'need paging?', created_at: '2026-01-02T00:00:00.000Z' },
+      { id: 'm3', from_agent: 'coder', to_agent: 'reviewer', type: 'info', severity: 'info', status: 'read', body: 'done', created_at: '2026-01-01T00:00:00.000Z' }
+    ]);
+    const appCtx = createTestApp({ messagesDb });
+
+    const toCoder = await request(appCtx.app).get('/api/messages?to=coder').expect(200);
+    assert.equal(toCoder.body.length, 2);
+    assert.ok(toCoder.body.every((m) => m.to_agent === 'coder'));
+
+    const blocking = await request(appCtx.app).get('/api/messages?severity=blocking').expect(200);
+    assert.equal(blocking.body.length, 1);
+    assert.equal(blocking.body[0].id, 'm1');
+
+    const unread = await request(appCtx.app).get('/api/messages?status=unread').expect(200);
+    assert.equal(unread.body.length, 2);
+    assert.ok(unread.body.every((m) => m.status === 'unread'));
+
+    messagesDb.close();
+    appCtx.cleanup();
+    appCtx.cleanupTmpDir();
+  });
+
+  test('orders messages by recency before severity', async () => {
+    const messagesDb = createMessagesDb([
+      { id: 'm-old-blocking', from_agent: 'reviewer', to_agent: 'coder', type: 'diff_feedback', severity: 'blocking', status: 'unread', body: 'older blocking', created_at: '2026-01-01T00:00:00.000Z' },
+      { id: 'm-new-advisory', from_agent: 'planner', to_agent: 'coder', type: 'question', severity: 'advisory', status: 'unread', body: 'newer advisory', created_at: '2026-01-02T00:00:00.000Z' }
+    ]);
+    const appCtx = createTestApp({ messagesDb });
+
+    const res = await request(appCtx.app).get('/api/messages?limit=10').expect(200);
+    assert.equal(res.body[0].id, 'm-new-advisory');
+    assert.equal(res.body[1].id, 'm-old-blocking');
+
+    messagesDb.close();
+    appCtx.cleanup();
+    appCtx.cleanupTmpDir();
+  });
+
+  test('returns 404 for missing message id', async () => {
+    const messagesDb = createMessagesDb([
+      { id: 'm1', from_agent: 'reviewer', to_agent: 'coder', type: 'diff_feedback', severity: 'blocking', status: 'unread', body: 'fix validation' }
+    ]);
+    const appCtx = createTestApp({ messagesDb });
+    await request(appCtx.app).get('/api/messages/not-found').expect(404);
+    messagesDb.close();
     appCtx.cleanup();
     appCtx.cleanupTmpDir();
   });

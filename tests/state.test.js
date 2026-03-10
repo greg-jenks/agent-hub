@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const request = require('supertest');
 const { createTestApp } = require('./helpers/create-app');
+const { createApp } = require('../status-server');
 
 async function getStatus(app) {
   const res = await request(app).get('/status').expect(200);
@@ -85,4 +89,43 @@ test('agent isolation across updates', async () => {
 
   appCtx.cleanup();
   appCtx.cleanupTmpDir();
+});
+
+test('stale active and attention states reset to idle on startup', async () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-hub-stale-'));
+  const statusFile = path.join(tmpDir, 'status.json');
+  const feedFile = path.join(tmpDir, 'feed.json');
+  const staleTime = new Date(Date.now() - (2 * 60 * 60 * 1000)).toISOString();
+  const freshTime = new Date().toISOString();
+
+  fs.writeFileSync(statusFile, JSON.stringify({
+    agents: {
+      planner: { state: 'attention', message: 'Waiting for your response', updated: staleTime, substatus: 'awaiting-input' },
+      coder: { state: 'active', message: 'Working', updated: freshTime, substatus: 'thinking' },
+      reviewer: { state: 'idle', message: '', updated: staleTime },
+      puddleglum: { state: 'active', message: 'Running', updated: staleTime, substatus: 'tool' }
+    },
+    serverStarted: staleTime
+  }), 'utf8');
+  fs.writeFileSync(feedFile, '[]', 'utf8');
+
+  const appCtx = createApp({
+    opencodeDb: null,
+    learningsDb: null,
+    messagesDb: null,
+    statusFile,
+    feedFile,
+    skipPolling: true,
+    skipFlush: true
+  });
+
+  const status = await getStatus(appCtx.app);
+  assert.equal(status.agents.planner.state, 'idle');
+  assert.equal(status.agents.planner.message, '');
+  assert.equal(status.agents.puddleglum.state, 'idle');
+  assert.equal(status.agents.coder.state, 'active');
+  assert.notEqual(status.serverStarted, staleTime);
+
+  appCtx.cleanup();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });

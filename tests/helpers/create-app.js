@@ -8,6 +8,7 @@ function createTestApp(overrides = {}) {
   const defaults = {
     opencodeDb: null,
     learningsDb: null,
+    messagesDb: null,
     statusFile: path.join(tmpDir, 'status.json'),
     feedFile: path.join(tmpDir, 'feed.json'),
     skipPolling: true,

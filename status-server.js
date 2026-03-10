@@ -17,22 +17,27 @@ const LEARNINGS_DB_PATH = process.env.LEARNINGS_DB_PATH
   || path.join(__dirname, '..', 'learnings-mcp', 'data', 'learnings.db');
 const QMD_DB_PATH = process.env.QMD_DB_PATH
   || path.join(os.homedir(), '.cache', 'qmd', 'index.sqlite');
+const MESSAGES_DB_PATH = process.env.MESSAGES_DB_PATH
+  || path.join(os.homedir(), '.agent', 'messages.db');
 
-const VALID_AGENTS = ['planner', 'coder', 'reviewer', 'refactor'];
+const VALID_AGENTS = ['planner', 'coder', 'reviewer', 'puddleglum'];
 const VALID_STATES = ['idle', 'active', 'attention', 'done', 'error'];
-const OPENCODE_AGENTS = ['planner', 'reviewer', 'refactor']; // Agents using opencode DB
+const OPENCODE_AGENTS = ['planner', 'reviewer', 'puddleglum']; // Agents using opencode DB
 // Note: 'coder' uses pollCopilotActivity() instead of pollOpenCodeActivity().
 const MAX_FEED_ITEMS = 50;
 const MAX_ACTIVITY_ITEMS = 10;
 const STATUS_FLUSH_INTERVAL = 5000;
 const ACTIVITY_POLL_INTERVAL = 2000;
 const COPILOT_TOOL_APPROVAL_WAIT_MS = 2500;
+const STALE_RUNTIME_STATE_MS = 30 * 60 * 1000;
 
 const MODEL_CACHE_TTL = 30_000;
 const LEARNINGS_CACHE_TTL = 30_000;
 const LEARNINGS_MAX_FETCH = 50;
 const QMD_DEFAULT_LIMIT = 20;
 const QMD_MAX_LIMIT = 50;
+const MESSAGES_CACHE_TTL = 5_000;
+const MESSAGES_POLL_INTERVAL = 5_000;
 
 // Patterns that indicate the agent is asking a question or needs user input.
 // Checked against the last ~1500 chars of the agent's response.
@@ -63,6 +68,7 @@ function createApp(config = {}) {
   const hasOpenCodeDb = Object.prototype.hasOwnProperty.call(config, 'opencodeDb');
   const hasLearningsDb = Object.prototype.hasOwnProperty.call(config, 'learningsDb');
   const hasQmdDb = Object.prototype.hasOwnProperty.call(config, 'qmdDb');
+  const hasMessagesDb = Object.prototype.hasOwnProperty.call(config, 'messagesDb');
 
   const statusFile = config.statusFile || STATUS_FILE;
   const feedFile = config.feedFile || FEED_FILE;
@@ -95,8 +101,18 @@ function createApp(config = {}) {
     }
   }
 
+  let messagesDb = hasMessagesDb ? config.messagesDb : null;
+  if (!hasMessagesDb) {
+    try {
+      messagesDb = new Database(MESSAGES_DB_PATH, { readonly: true, fileMustExist: true });
+    } catch (e) {
+      console.warn(`[messages] Could not open messages DB at ${MESSAGES_DB_PATH}: ${e.message}`);
+    }
+  }
+
   let modelCache = { data: {}, timestamp: 0 };
   let learningsCache = { data: [], timestamp: 0 };
+  let messagesCache = { counts: {}, timestamp: 0 };
 
   // --- In-memory state ---
 
@@ -143,8 +159,68 @@ function createApp(config = {}) {
     return { agents, serverStarted: now };
   }
 
+  function toTimestampMs(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = new Date(value);
+      const ms = parsed.getTime();
+      if (Number.isFinite(ms)) return ms;
+    }
+    return null;
+  }
+
+  function normalizeLoadedState(rawState) {
+    const normalized = getDefaultStatus();
+    const nowMs = Date.now();
+    const rawAgents = rawState && typeof rawState === 'object' ? rawState.agents : null;
+
+    if (!rawAgents || typeof rawAgents !== 'object') {
+      return normalized;
+    }
+
+    for (const agent of VALID_AGENTS) {
+      const incoming = rawAgents[agent];
+      if (!incoming || typeof incoming !== 'object') continue;
+
+      const next = normalized.agents[agent];
+      const incomingState = VALID_STATES.includes(incoming.state) ? incoming.state : 'idle';
+      const updatedMs = toTimestampMs(incoming.updated);
+      const lastActivityMs = toTimestampMs(incoming.lastActivity);
+      const freshestMs = Math.max(
+        updatedMs ?? Number.NEGATIVE_INFINITY,
+        lastActivityMs ?? Number.NEGATIVE_INFINITY
+      );
+      const isStale = Number.isFinite(freshestMs) && (nowMs - freshestMs > STALE_RUNTIME_STATE_MS);
+      const shouldResetState = (incomingState === 'active' || incomingState === 'attention') && isStale;
+
+      next.state = shouldResetState ? 'idle' : incomingState;
+      next.message = shouldResetState ? '' : (typeof incoming.message === 'string' ? incoming.message : '');
+      next.updated = updatedMs ? new Date(updatedMs).toISOString() : next.updated;
+
+      if (incoming.model) next.model = incoming.model;
+      if (incoming.provider) next.provider = incoming.provider;
+      if (incoming.sessionId) next.sessionId = incoming.sessionId;
+      if (!shouldResetState && lastActivityMs) {
+        next.lastActivity = incoming.lastActivity;
+      }
+
+      if (!shouldResetState && (next.state === 'active' || next.state === 'attention')) {
+        if (incoming.substatus === null || typeof incoming.substatus === 'string') {
+          next.substatus = incoming.substatus;
+        }
+        if (incoming.toolName === null || typeof incoming.toolName === 'string') {
+          next.toolName = incoming.toolName;
+        }
+      }
+    }
+
+    return normalized;
+  }
+
   function initState() {
-    agentState = readJSON(statusFile, getDefaultStatus());
+    agentState = normalizeLoadedState(readJSON(statusFile, getDefaultStatus()));
     feedBuffer = readJSON(feedFile, []);
   }
 
@@ -176,7 +252,7 @@ function createApp(config = {}) {
           json_extract(m.data, '$.providerID') as provider
         FROM message m
         WHERE json_extract(m.data, '$.role') = 'assistant'
-          AND json_extract(m.data, '$.agent') IN ('planner','reviewer','refactor')
+          AND json_extract(m.data, '$.agent') IN ('planner','reviewer','puddleglum')
           AND m.time_created = (
             SELECT MAX(time_created)
             FROM message m2
@@ -263,6 +339,91 @@ function createApp(config = {}) {
       return rows;
     } catch (e) {
       console.warn('[qmd] Search failed:', e.message);
+      return [];
+    }
+  }
+
+  function getMessageCounts() {
+    const now = Date.now();
+    if (now - messagesCache.timestamp < MESSAGES_CACHE_TTL) {
+      return messagesCache.counts;
+    }
+
+    const counts = {};
+    for (const agent of VALID_AGENTS) {
+      counts[agent] = { total: 0, blocking: 0 };
+    }
+
+    if (!messagesDb) {
+      messagesCache = { counts, timestamp: now };
+      return counts;
+    }
+
+    try {
+      const rows = messagesDb.prepare(`
+        SELECT
+          to_agent,
+          COUNT(*) as total,
+          SUM(CASE WHEN severity = 'blocking' THEN 1 ELSE 0 END) as blocking
+        FROM messages
+        WHERE status = 'unread'
+        GROUP BY to_agent
+      `).all();
+
+      for (const row of rows) {
+        if (counts[row.to_agent]) {
+          counts[row.to_agent] = { total: row.total, blocking: row.blocking };
+        }
+      }
+      messagesCache = { counts, timestamp: now };
+      return counts;
+    } catch (e) {
+      console.warn('[messages] Failed to read message counts:', e.message);
+      return messagesCache.counts;
+    }
+  }
+
+  function getMessages(options = {}) {
+    if (!messagesDb) return [];
+
+    try {
+      let query = 'SELECT * FROM messages WHERE 1=1';
+      const params = [];
+
+      if (options.to) {
+        query += ' AND to_agent = ?';
+        params.push(options.to);
+      }
+      if (options.from) {
+        query += ' AND from_agent = ?';
+        params.push(options.from);
+      }
+      if (options.status && options.status !== 'all') {
+        query += ' AND status = ?';
+        params.push(options.status);
+      }
+      if (options.ref) {
+        query += ' AND ref = ?';
+        params.push(options.ref);
+      }
+      if (options.threadId) {
+        query += ' AND thread_id = ?';
+        params.push(options.threadId);
+      }
+      if (options.severity) {
+        query += ' AND severity = ?';
+        params.push(options.severity);
+      }
+
+      query += ' ORDER BY created_at DESC, CASE severity WHEN \'blocking\' THEN 0 WHEN \'advisory\' THEN 1 ELSE 2 END';
+
+      const limit = Math.min(parseInt(options.limit, 10) || 50, 200);
+      query += ' LIMIT ?';
+      params.push(limit);
+
+      return messagesDb.prepare(query).all(...params);
+    } catch (e) {
+      console.warn('[messages] Query failed:', e.message);
       return [];
     }
   }
@@ -975,7 +1136,7 @@ function createApp(config = {}) {
       const latest = opencodeDb.prepare(`
         SELECT json_extract(data, '$.agent') as agent, MAX(time_created) as latest
         FROM message
-        WHERE json_extract(data, '$.agent') IN ('planner', 'reviewer', 'refactor')
+        WHERE json_extract(data, '$.agent') IN ('planner', 'reviewer', 'puddleglum')
         GROUP BY json_extract(data, '$.agent')
       `).all();
 
@@ -1032,7 +1193,8 @@ function createApp(config = {}) {
       type: 'init',
       status: buildStatusSnapshot(),
       feed: feedBuffer.slice(0, MAX_FEED_ITEMS),
-      learnings: getRecentLearnings(20)
+      learnings: getRecentLearnings(20),
+      messageCounts: getMessageCounts()
     })}\n\n`);
 
     const heartbeat = setInterval(() => {
@@ -1193,6 +1355,60 @@ function createApp(config = {}) {
     }
   });
 
+  // GET /api/messages/counts — Unread message counts per agent
+  app.get('/api/messages/counts', (req, res) => {
+    res.json(getMessageCounts());
+  });
+
+  // GET /api/messages/thread/:threadId — Get all messages in a thread
+  app.get('/api/messages/thread/:threadId', (req, res) => {
+    if (!messagesDb) {
+      return res.json([]);
+    }
+
+    try {
+      const rows = messagesDb.prepare(
+        'SELECT * FROM messages WHERE thread_id = ? ORDER BY created_at ASC'
+      ).all(req.params.threadId);
+      return res.json(rows);
+    } catch (e) {
+      console.warn('[messages] Thread query failed:', e.message);
+      return res.json([]);
+    }
+  });
+
+  // GET /api/messages/:id — Get a single message by ID
+  app.get('/api/messages/:id', (req, res) => {
+    if (!messagesDb) {
+      return res.status(404).json({ error: 'Messages DB not available' });
+    }
+
+    try {
+      const msg = messagesDb.prepare('SELECT * FROM messages WHERE id = ?').get(req.params.id);
+      if (!msg) {
+        return res.status(404).json({ error: 'Message not found' });
+      }
+      return res.json(msg);
+    } catch (e) {
+      console.warn('[messages] Failed to fetch message:', e.message);
+      return res.status(500).json({ error: 'Failed to fetch message' });
+    }
+  });
+
+  // GET /api/messages — List messages with optional filters
+  app.get('/api/messages', (req, res) => {
+    const messages = getMessages({
+      to: req.query.to || undefined,
+      from: req.query.from || undefined,
+      status: req.query.status || 'all',
+      severity: req.query.severity || undefined,
+      ref: req.query.ref || undefined,
+      threadId: req.query.thread || undefined,
+      limit: req.query.limit
+    });
+    res.json(messages);
+  });
+
   app.get('/', (req, res) => {
     const htmlPath = path.join(__dirname, 'agent-hub.html');
     if (fs.existsSync(htmlPath)) {
@@ -1221,6 +1437,17 @@ function createApp(config = {}) {
         pollCopilotActivity();
       }
     }, ACTIVITY_POLL_INTERVAL));
+  }
+  if (!config.skipPolling) {
+    let lastMessageCounts = JSON.stringify({});
+    intervals.push(setInterval(() => {
+      const counts = getMessageCounts();
+      const serialized = JSON.stringify(counts);
+      if (serialized !== lastMessageCounts) {
+        lastMessageCounts = serialized;
+        broadcastSSE({ type: 'message-counts', counts });
+      }
+    }, MESSAGES_POLL_INTERVAL));
   }
 
   return {
@@ -1266,6 +1493,10 @@ if (require.main === module) {
     GET  /learnings → Recent learnings JSON
     GET  /qmd/search → Search QMD docs (FTS5)
     GET  /qmd/doc/:id → Get full document content
+    GET  /api/messages → List messages (filterable)
+    GET  /api/messages/counts → Unread counts per agent
+    GET  /api/messages/:id → Single message detail
+    GET  /api/messages/thread/:id → Thread view
 
   POST /status body example:
     { "agent": "planner", "state": "active", "message": "Session started" }
@@ -1274,6 +1505,7 @@ if (require.main === module) {
   Valid states: ${VALID_STATES.join(', ')}
   Learnings DB: ${process.env.LEARNINGS_DB_PATH || LEARNINGS_DB_PATH}
   QMD DB: ${process.env.QMD_DB_PATH || QMD_DB_PATH}
+  Messages DB: ${process.env.MESSAGES_DB_PATH || MESSAGES_DB_PATH}
   `);
   });
 }

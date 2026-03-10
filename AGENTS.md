@@ -49,6 +49,11 @@ Optimize for correctness, small verifiable changes, and fast iteration.
 - Use the global skill `provable-commits` from `C:\Users\gjenks\.claude\skills\provable-commits`.
 - Trigger it when drafting commit messages to follow the Provable Commits convention and include Shortcut links.
 
+## Serena MCP Usage
+- Use Serena's symbol-level tools when available for navigation/refactors: `find_symbol`, `get_symbols_overview`, `find_referencing_symbols`, `rename_symbol`, `replace_symbol_body`.
+- At session start, activate the current repo in Serena (`activate_project`) before deep code analysis.
+- Use Serena for semantic lookup/editing and keep built-in tools for file IO and shell execution.
+
 ## Default Output Sections
 Always end responses with:
 - Summary

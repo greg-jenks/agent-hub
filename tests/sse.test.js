@@ -26,6 +26,7 @@ test('GET /stream headers and init event shape', async () => {
   assert.ok(init.status);
   assert.ok(Array.isArray(init.feed));
   assert.ok(Array.isArray(init.learnings));
+  assert.ok(init.messageCounts);
 
   const status = await request(server).get('/status').expect(200);
   assert.deepEqual(Object.keys(init.status.agents).sort(), Object.keys(status.body.agents).sort());

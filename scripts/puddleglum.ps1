@@ -1,10 +1,10 @@
-# Agent Hub — Refactor Wrapper
+# Agent Hub — Puddleglum Wrapper
 # Posts lifecycle status to the hub server on start/exit
 # Model detection is automatic via OpenCode DB polling
-# Usage: .\scripts\refactor.ps1
+# Usage: .\scripts\puddleglum.ps1
 
 $HubUrl = "http://localhost:3747/status"
-$Agent = "refactor"
+$Agent = "puddleglum"
 
 function Post-Status {
     param([string]$State, [string]$Message)
@@ -18,17 +18,18 @@ function Post-Status {
 }
 
 Write-Host ""
-Write-Host "  === REFACTOR AGENT ===" -ForegroundColor Yellow
-Write-Host "  Activity streaming: via OpenCode DB" -ForegroundColor DarkYellow
+Write-Host "  === PUDDLEGLUM ===" -ForegroundColor Red
+Write-Host "  Pre-mortem analysis agent" -ForegroundColor DarkRed
+Write-Host "  Activity streaming: via OpenCode DB" -ForegroundColor DarkGray
 Write-Host ""
 
 Post-Status -State "active" -Message "Session started"
 
 try {
-    opencode --agent refactor
+    opencode --agent puddleglum
 } finally {
     Post-Status -State "done" -Message "Session ended"
     Write-Host ""
-    Write-Host "  Refactor session ended. Terminal stays open." -ForegroundColor DarkYellow
+    Write-Host "  Puddleglum session ended. Terminal stays open." -ForegroundColor DarkRed
     Write-Host ""
 }

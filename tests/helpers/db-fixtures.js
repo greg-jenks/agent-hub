@@ -57,4 +57,51 @@ function createLearningsDb(entries = []) {
   return db;
 }
 
-module.exports = { createOpenCodeDb, insertMessage, insertPart, createLearningsDb };
+function createMessagesDb(messages = []) {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE messages (
+      id             TEXT PRIMARY KEY,
+      thread_id      TEXT NOT NULL,
+      parent_id      TEXT,
+      from_agent     TEXT NOT NULL,
+      to_agent       TEXT NOT NULL,
+      type           TEXT NOT NULL,
+      severity       TEXT NOT NULL DEFAULT 'advisory',
+      ref            TEXT,
+      body           TEXT NOT NULL,
+      status         TEXT NOT NULL DEFAULT 'unread',
+      created_at     TEXT NOT NULL,
+      read_at        TEXT,
+      addressed_at   TEXT,
+      addressed_note TEXT
+    )
+  `);
+  const insert = db.prepare(`
+    INSERT INTO messages (
+      id, thread_id, parent_id, from_agent, to_agent, type, severity, ref, body, status,
+      created_at, read_at, addressed_at, addressed_note
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const msg of messages) {
+    insert.run(
+      msg.id,
+      msg.thread_id || msg.id,
+      msg.parent_id || null,
+      msg.from_agent,
+      msg.to_agent,
+      msg.type || 'info',
+      msg.severity || 'advisory',
+      msg.ref || null,
+      msg.body || '',
+      msg.status || 'unread',
+      msg.created_at || new Date().toISOString(),
+      msg.read_at || null,
+      msg.addressed_at || null,
+      msg.addressed_note || null
+    );
+  }
+  return db;
+}
+
+module.exports = { createOpenCodeDb, insertMessage, insertPart, createLearningsDb, createMessagesDb };
